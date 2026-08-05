@@ -37,6 +37,8 @@ if (-not (Test-Path $Python)) { throw "找不到解释器: $Python" }
 $startup  = [Environment]::GetFolderPath("Startup")
 $linkPath = Join-Path $startup "jo-app.lnk"
 
+$icon = Join-Path $projectRoot "joapp\resources\jo-app.ico"
+
 $shell = New-Object -ComObject WScript.Shell
 $link = $shell.CreateShortcut($linkPath)
 $link.TargetPath       = $Python
@@ -44,6 +46,7 @@ $link.Arguments        = "-m joapp"
 $link.WorkingDirectory = $projectRoot
 $link.Description      = "jo-app - 每天开机问你一句"
 $link.WindowStyle      = 7    # 最小化启动
+if (Test-Path $icon) { $link.IconLocation = "$icon,0" }
 $link.Save()
 
 Write-Host "已注册开机自启" -ForegroundColor Green

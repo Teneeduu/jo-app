@@ -26,5 +26,8 @@ jo-app = "joapp.ui.app:run"
 [tool.setuptools.packages.find]
 include = ["joapp*"]
 
+[tool.setuptools.package-data]
+joapp = ["resources/*.ico"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]

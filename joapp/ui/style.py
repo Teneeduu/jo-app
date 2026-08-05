@@ -94,18 +94,45 @@ QCheckBox {{ spacing: 8px; }}
 """
 
 
-def app_icon() -> QIcon:
-    """画一个 32×32 的 "jo" 方块当图标，省掉打包资源文件。"""
-    pix = QPixmap(64, 64)
+ICON_SIZES = (16, 24, 32, 48, 64, 128, 256)
+
+
+def icon_pixmap(size: int = 64) -> QPixmap:
+    """画一个 "jo" 圆角方块。所有比例按 size 缩放，小尺寸下也不糊。"""
+    pix = QPixmap(size, size)
     pix.fill(Qt.transparent)
     p = QPainter(pix)
     p.setRenderHint(QPainter.Antialiasing)
     p.setBrush(QColor(ACCENT))
     p.setPen(Qt.NoPen)
-    p.drawRoundedRect(QRect(2, 2, 60, 60), 14, 14)
+    margin = max(1, round(size * 0.031))
+    radius = size * 0.22
+    p.drawRoundedRect(
+        QRect(margin, margin, size - margin * 2, size - margin * 2), radius, radius
+    )
     p.setPen(QColor("#ffffff"))
-    font = QFont("Segoe UI", 28, QFont.Bold)
-    p.setFont(font)
-    p.drawText(QRect(0, 0, 64, 64), Qt.AlignCenter, "jo")
+    # 小图标上「jo」两个字母会糊成一团，缩到 24 以下只留一个 j
+    text = "jo" if size >= 24 else "j"
+    p.setFont(QFont("Segoe UI", max(6, round(size * 0.44)), QFont.Bold))
+    p.drawText(QRect(0, 0, size, size), Qt.AlignCenter, text)
     p.end()
-    return QIcon(pix)
+    return pix
+
+
+def app_icon() -> QIcon:
+    """多尺寸图标 —— 托盘用 16/24，任务栏用 32/48，通知用大的。"""
+    icon = QIcon()
+    for size in ICON_SIZES:
+        icon.addPixmap(icon_pixmap(size))
+    return icon
+
+
+def write_ico(path) -> str:
+    """导出 .ico 给快捷方式用（Qt 自带 ico 写入器）。"""
+    from pathlib import Path
+
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if not icon_pixmap(256).save(str(target), "ico"):
+        raise RuntimeError(f"写图标失败: {target}")
+    return str(target)

@@ -160,6 +160,27 @@ setx ANTHROPIC_API_KEY "sk-ant-..."
 OAuth ——  Pro/Max 订阅不覆盖 API 调用。所以如果你把 jo-app 发给别人，
 每个人还是得自带凭据，或者你自己搭个后端代理。
 
+### 桌面快捷方式
+
+jo-app **没有独立的 exe** —— 它跑在 `pythonw.exe -m joapp` 上（用 `pythonw`
+而不是 `python`，双击时才不会弹黑框）。快捷方式脚本会把这些接好，图标用
+`joapp/resources/jo-app.ico`：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\create_shortcut.ps1
+powershell -ExecutionPolicy Bypass -File .\scripts\create_shortcut.ps1 -StartMenu  # 顺带放开始菜单
+powershell -ExecutionPolicy Bypass -File .\scripts\create_shortcut.ps1 -Remove     # 删掉
+```
+
+> 双击之后**不会有窗口弹出来** —— 它是托盘应用，看右下角。今天还没规划的话
+> 晨间窗口会自己出现。
+
+图标是 `joapp/ui/style.py` 里用 QPainter 画的，改了配色重新导出：
+
+```powershell
+.\.venv\Scripts\python.exe scripts\make_icon.py
+```
+
 ### 设成开机自启
 
 ```powershell
