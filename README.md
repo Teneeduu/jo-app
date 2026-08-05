@@ -97,15 +97,36 @@ python -m joapp
 
 ### 接上 Claude（可选）
 
-不填也能跑，填了提醒会更像人话，任务拆解也更准。
+不接也能跑，接了提醒会更像人话，任务拆解也更准。两条路，选一条：
+
+**① 浏览器登录（推荐）**
 
 ```powershell
-# 当前会话
-$env:ANTHROPIC_API_KEY = "sk-ant-..."
+ant auth login
+```
 
-# 或者永久写进用户环境变量
+装了 [ant CLI](https://github.com/anthropics/anthropic-cli/releases) 之后跑这一句，
+浏览器里点确认，凭据落到 `%APPDATA%\Anthropic\credentials\`，SDK 会自动读到 ——
+**不需要设任何环境变量**。存的是会自动刷新的短期 token，不是一个永久明文密钥。
+
+也可以直接在 jo-app 里点：托盘菜单 →「连接 Claude…」，或者今日面板左下角那个按钮。
+登录完不用重启，应用每 20 秒会重新探测一次凭据。
+
+**② 环境变量**
+
+```powershell
 setx ANTHROPIC_API_KEY "sk-ant-..."
 ```
+
+> ⚠️ **两个一起用的时候环境变量赢。** 已经登录过、又设了 `ANTHROPIC_API_KEY`，
+> 那 profile 就被架空了。更阴的是**空字符串也算数** —— `ANTHROPIC_API_KEY=""`
+> 照样占住优先级，然后拿着空 key 去请求。想用登录凭据就把这个变量**彻底删掉**，
+> 不是设成空。今日面板会在检测到这种情况时直接告诉你。
+
+**关于「用 Claude 账号登录」**：上面的 `ant auth login` 是**你自己**在**你自己机器上**
+拿 API 凭据。Anthropic 没有那种「让第三方 App 借用终端用户 Claude 订阅额度」的
+OAuth ——  Pro/Max 订阅不覆盖 API 调用。所以如果你把 jo-app 发给别人，
+每个人还是得自带凭据，或者你自己搭个后端代理。
 
 ### 设成开机自启
 
@@ -143,7 +164,9 @@ powershell -ExecutionPolicy Bypass -File .\scripts\uninstall_startup.ps1
 }
 ```
 
-API key 只从环境变量读，**不会**写进这个文件。
+`llm_enabled` 只表示「我愿不愿意用」；有没有凭据是另一回事，由 `agent/auth.py`
+探测。凭据本身**永远不会**写进这个文件 —— 要么在环境变量里，要么在
+`%APPDATA%\Anthropic\` 由 ant CLI 管。
 
 数据库在同目录的 `jo.db`，标准 SQLite，想自己写脚本查随便查。
 
@@ -157,6 +180,7 @@ joapp/
 │  └─ store.py        SQLite 持久化，手写 SQL
 ├─ agent/
 │  ├─ rules.py        规则引擎（纯函数，离线可用）
+│  ├─ auth.py         凭据探测：登录 profile / 环境变量 / 什么都没有
 │  ├─ llm.py          Claude API 客户端，失败即降级
 │  ├─ prompts.py      提示词与 JSON schema
 │  └─ planner.py      统一入口，规则与模型的编排

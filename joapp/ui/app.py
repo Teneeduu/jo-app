@@ -15,6 +15,7 @@ from PySide6.QtCore import QObject, QThread, QTimer, Signal
 from PySide6.QtWidgets import QApplication, QSystemTrayIcon
 
 from .. import APP_NAME, config
+from ..agent import auth
 from ..agent.planner import Planner
 from ..agent.rules import COOLDOWN, Snapshot
 from ..core.models import Nudge, NudgeKind, TaskStatus
@@ -64,15 +65,19 @@ class JoApp(QObject):
         self.tray.plan_requested.connect(self.open_morning)
         self.tray.board_requested.connect(self.open_board)
         self.tray.break_requested.connect(self.toggle_break)
+        self.tray.login_requested.connect(self.connect_claude)
         self.tray.quit_requested.connect(self.quit)
 
-        self.board = DayBoard(self.store)
+        self.board = DayBoard(self.store, self.planner)
         self.board.plan_requested.connect(self.open_morning)
+        self.board.login_requested.connect(self.connect_claude)
 
         self._morning: MorningWindow | None = None
         self._toast: NudgeToast | None = None
         self._worker: _NudgeWorker | None = None
         self._day = date.today()
+        self._was_connected = False
+        self._refresh_auth_state(notify=False)  # 启动时别为「本来就连着」弹通知
 
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.tick)
@@ -91,6 +96,7 @@ class JoApp(QObject):
 
         self.tracker.tick(idle_minutes(), now)
         self.tray.set_on_break(self.tracker.phase is Phase.BREAK)
+        self._refresh_auth_state()
 
         if self._toast is not None or self._worker is not None:
             return  # 上一条还没处理完，不叠加
@@ -193,6 +199,28 @@ class JoApp(QObject):
         self.board.show()
         self.board.raise_()
         self.board.activateWindow()
+
+    def _refresh_auth_state(self, notify: bool = True) -> None:
+        """凭据可能在应用跑着的时候才出现（用户去 ant auth login 了）。"""
+        creds = self.planner.credentials
+        connected = creds.available and self.cfg.llm_enabled
+        self.tray.set_connected(connected, creds.detail)
+        if notify and connected and not self._was_connected:
+            self.tray.notify("Claude 接上了", creds.detail)
+        self._was_connected = connected
+
+    def connect_claude(self) -> None:
+        """走 OAuth 登录，而不是让用户去环境变量里塞 key。"""
+        creds = self.planner.credentials
+        if creds.available:
+            self.tray.notify("已经连上了", creds.detail)
+            return
+        if auth.launch_login():
+            self.tray.notify(
+                "浏览器里完成登录", "登录完不用重启，我会自己发现。"
+            )
+        else:
+            self.tray.notify("先装一下 ant CLI", auth.INSTALL_HINT)
 
     def toggle_break(self) -> None:
         if self.tracker.phase is Phase.BREAK:

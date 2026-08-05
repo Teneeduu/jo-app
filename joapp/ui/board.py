@@ -15,16 +15,19 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ..agent.planner import Planner
 from ..core.models import TaskStatus
 from ..core.store import Store
 
 
 class DayBoard(QWidget):
     plan_requested = Signal()
+    login_requested = Signal()
 
-    def __init__(self, store: Store):
+    def __init__(self, store: Store, planner: Planner):
         super().__init__()
         self.store = store
+        self.planner = planner
         self.setWindowTitle("jo-app · 今天")
         self.setMinimumSize(420, 480)
 
@@ -50,7 +53,16 @@ class DayBoard(QWidget):
         scroll.setWidget(self._host)
         root.addWidget(scroll, 1)
 
+        # 凭据状态：告诉用户现在是 Claude 在答还是本地规则在答
+        self.auth_label = QLabel("")
+        self.auth_label.setObjectName("Muted")
+        self.auth_label.setWordWrap(True)
+        root.addWidget(self.auth_label)
+
         row = QHBoxLayout()
+        self.login = QPushButton("连接 Claude")
+        self.login.clicked.connect(self.login_requested.emit)
+        row.addWidget(self.login)
         row.addStretch()
         add = QPushButton("加点事")
         add.setObjectName("Primary")
@@ -59,6 +71,7 @@ class DayBoard(QWidget):
         root.addLayout(row)
 
     def refresh(self) -> None:
+        self._refresh_auth()
         while self._body.count():
             item = self._body.takeAt(0)
             if item.widget():
@@ -98,6 +111,19 @@ class DayBoard(QWidget):
             bar.setValue(int(goal.percent))
             bar.setFormat(f"{goal.percent:.0f}%")
             self._body.addWidget(bar)
+
+    def _refresh_auth(self) -> None:
+        creds = self.planner.credentials
+        if not self.planner.cfg.llm_enabled:
+            text = "Claude：配置里关掉了，全部走本地规则"
+        elif creds.available:
+            text = f"Claude：{creds.detail}"
+        else:
+            text = f"Claude：{creds.detail} —— 现在提醒由本地规则生成"
+        if creds.warning:
+            text += f"\n⚠ {creds.warning}"
+        self.auth_label.setText(text)
+        self.login.setVisible(not creds.available)
 
     def _toggle(self, task_id: int, checked: bool) -> None:
         self.store.set_task_status(

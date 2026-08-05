@@ -13,6 +13,7 @@ from datetime import date
 from ..config import Config
 from ..core.models import Goal, Nudge, Task
 from ..core.store import Store
+from . import auth
 from .llm import LLM, LLMUnavailable
 from .rules import Snapshot, evaluate
 
@@ -28,13 +29,22 @@ class Planner:
         self.llm = LLM(cfg)
         self.last_source = "rules"  # 上一次是谁答的，UI 上会标出来
 
+    @property
+    def credentials(self) -> auth.Credentials:
+        """每次现查 —— 用户可能在应用跑着的时候才去 ant auth login。"""
+        return auth.detect()
+
+    @property
+    def use_llm(self) -> bool:
+        return self.cfg.llm_enabled and self.credentials.available
+
     # ---------- 把一段话变成任务 ----------
 
     def plan_from_text(self, raw: str, day: date | None = None) -> tuple[list[Task], str]:
         """返回 (任务列表, 一句点评)。任务还没入库，交给调用方确认后再存。"""
         day = day or date.today()
         goals = self.store.goals()
-        if self.cfg.use_llm:
+        if self.use_llm:
             try:
                 result = self.llm.plan_tasks(raw, [g.title for g in goals])
                 self.last_source = "llm"
@@ -77,7 +87,7 @@ class Planner:
             return None
         nudge = candidates[0]
 
-        if self.cfg.use_llm:
+        if self.use_llm:
             try:
                 better = self.llm.rewrite_nudge(
                     nudge.kind.value, nudge.title, nudge.body, _context(snapshot)

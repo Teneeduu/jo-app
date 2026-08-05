@@ -37,7 +37,9 @@ class Config:
     evening_review_hour: int = 22  # 晚间复盘提醒时间，None 关闭
 
     # 智能层
-    llm_enabled: bool = True  # 有 key 就用 LLM，否则自动降级到规则引擎
+    # 只表示「我愿不愿意用」。有没有凭据是另一回事，由 agent/auth.py 探测，
+    # 真正的凭据解析交给 SDK —— 见 Planner.use_llm。
+    llm_enabled: bool = True
     model: str = "claude-opus-5"
     effort: str = "medium"  # low | medium | high | xhigh | max
 
@@ -46,15 +48,6 @@ class Config:
     nudge_seconds: int = 12  # 提醒气泡停留时长
 
     _extra: dict = field(default_factory=dict)
-
-    @property
-    def api_key(self) -> str | None:
-        """API key 只从环境变量读，不写进配置文件。"""
-        return os.environ.get("ANTHROPIC_API_KEY") or None
-
-    @property
-    def use_llm(self) -> bool:
-        return self.llm_enabled and bool(self.api_key)
 
 
 def load() -> Config:

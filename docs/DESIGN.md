@@ -81,6 +81,38 @@ def should_take_break(store, tracker, config, now): ...
 
 没上 ORM 是因为表就四张，手写 SQL 比引入 SQLAlchemy 的依赖划算。
 
+## 凭据：不要替 SDK 挑
+
+第一版写错过一次，值得记下来。当时是这样：
+
+```python
+if not os.environ.get("ANTHROPIC_API_KEY"):
+    raise LLMUnavailable("没有设置 ANTHROPIC_API_KEY")
+```
+
+看着挺合理，实际上**把登录这条路堵死了**。SDK 自己有一套查找顺序 ——
+环境变量、`ant auth login` 留下的 OAuth profile、WIF —— 跑过一次登录之后，
+裸的 `Anthropic()` 就能用，环境变量里可以一个字都没有。上面那个 `if` 会在
+SDK 有机会去找之前就把请求毙掉。
+
+现在的分工：
+
+- `agent/auth.py` 只做**探测和展示**，回答「现在会用哪一种凭据、有没有坑」，
+  给 UI 显示用。
+- 真正的凭据解析交给 SDK —— `anthropic.Anthropic()` 不传 `api_key`。
+
+两边分开是因为一旦我们也去挑凭据，就得跟 SDK 的优先级保持同步，
+而那个顺序以后是会变的。探测逻辑说错了只是 UI 上显示得不准，
+挑错了才会真的连不上。
+
+顺带记两个反直觉的地方，`tests/test_auth.py` 里都盖住了：
+
+- **空字符串照样占位**。`ANTHROPIC_API_KEY=""` 不等于没设置，它会赢过
+  已登录的 profile，然后拿着空 key 去请求。所以 `detect()` 把空值单独当成
+  一种失败状态并给出警告，而不是当成「没有」。
+- **指定了不存在的 profile 是错误，不会回退**。`ANTHROPIC_PROFILE=nope`
+  不会静默改用 default。
+
 ## 提示词的位置
 
 全部在 `agent/prompts.py`，包括 JSON schema。调提示词不用翻业务代码，

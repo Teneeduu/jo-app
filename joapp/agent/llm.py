@@ -31,13 +31,18 @@ class LLM:
     def _client_or_raise(self):
         if self._client is not None:
             return self._client
-        if not self.cfg.api_key:
-            raise LLMUnavailable("没有设置 ANTHROPIC_API_KEY")
         try:
             import anthropic
         except ImportError as e:  # pragma: no cover - 取决于安装环境
             raise LLMUnavailable("没装 anthropic SDK") from e
-        self._client = anthropic.Anthropic(timeout=TIMEOUT_SECONDS, max_retries=1)
+        # 不传 api_key —— 让 SDK 自己按顺序找：环境变量、ant auth login 留下的
+        # profile、WIF。我们替它挑就会跟它的优先级打架。
+        try:
+            self._client = anthropic.Anthropic(
+                timeout=TIMEOUT_SECONDS, max_retries=1
+            )
+        except Exception as e:  # 一个凭据都找不到时 SDK 会在构造期就抛
+            raise LLMUnavailable(f"找不到可用凭据: {e}") from e
         return self._client
 
     def _ask(self, instruction: str, schema: dict) -> dict[str, Any]:
