@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "jo-app"
+version = "0.1.0"
+description = "一个盯着你进度的 Windows 桌面规划助手 —— if you joke yourself, you are joker of course."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Teneeduu" }]
+keywords = ["productivity", "pomodoro", "agent", "claude", "windows"]
+
+dependencies = [
+    "PySide6>=6.6",
+]
+
+[project.optional-dependencies]
+llm = ["anthropic>=0.40"]
+dev = ["pytest>=8.0"]
+
+[project.gui-scripts]
+jo-app = "joapp.ui.app:run"
+
+[tool.setuptools.packages.find]
+include = ["joapp*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
