@@ -111,3 +111,31 @@ def test_profiles_lists_what_is_on_disk(clean_env):
 
 def test_config_dir_honours_the_override(clean_env, tmp_path):
     assert auth.config_dir() == tmp_path
+
+
+# --- 连接对话框依赖的判断 ---
+
+
+def test_api_key_shape_check():
+    assert auth.looks_like_api_key("sk-ant-api03-" + "x" * 40) is True
+    assert auth.looks_like_api_key("  sk-ant-" + "y" * 30 + "  ") is True
+    assert auth.looks_like_api_key("hello") is False
+    assert auth.looks_like_api_key("sk-ant-") is False  # 只有前缀，太短
+    assert auth.looks_like_api_key("") is False
+
+
+def test_cli_path_falls_back_to_the_winget_shim(clean_env, monkeypatch, tmp_path):
+    """PATH 是进程启动时的快照 —— 用户跑着的时候装完 ant，which 找不到。"""
+    monkeypatch.setattr(auth.shutil, "which", lambda _name: None)
+    assert auth.cli_path() is None
+
+    shim = tmp_path / "Microsoft" / "WinGet" / "Links"
+    shim.mkdir(parents=True)
+    (shim / "ant.exe").write_bytes(b"")
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    assert auth.cli_path() == str(shim / "ant.exe")
+
+
+def test_cli_path_prefers_what_is_on_path(clean_env, monkeypatch):
+    monkeypatch.setattr(auth.shutil, "which", lambda _name: r"C:\tools\ant.exe")
+    assert auth.cli_path() == r"C:\tools\ant.exe"

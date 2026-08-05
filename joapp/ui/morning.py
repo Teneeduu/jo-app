@@ -144,6 +144,21 @@ class MorningWindow(QWidget):
         buttons.addWidget(self.submit)
         root.addLayout(buttons)
 
+    def set_online(self, online: bool) -> None:
+        """连上 Claude 之后当场把提示换掉 —— 别让窗口还停在离线说明上。"""
+        if online == self.online:
+            return
+        self.online = online
+        self.connect_hint.setVisible(not online)
+        self.connect_btn.setVisible(not online)
+        if self._tasks:  # 已经在确认阶段了，别动上面的文案
+            return
+        self.hint.setText(ONLINE_HINT if online else OFFLINE_HINT)
+        self.input.setPlaceholderText(
+            ONLINE_PLACEHOLDER if online else OFFLINE_PLACEHOLDER
+        )
+        self.input.setFixedHeight(110 if online else 150)
+
     def keyPressEvent(self, event):  # Ctrl+Enter 提交
         if event.key() in (Qt.Key_Return, Qt.Key_Enter) and (
             event.modifiers() & Qt.ControlModifier

@@ -22,6 +22,7 @@ from ..core.models import Nudge, NudgeKind, TaskStatus
 from ..core.store import Store
 from ..scheduler import FocusTracker, Phase, idle_minutes
 from .board import DayBoard
+from .connect import ConnectDialog
 from .morning import MorningWindow
 from .nudge import NudgeToast
 from .style import QSS, app_icon
@@ -89,6 +90,7 @@ class JoApp(QObject):
         self.board.login_requested.connect(self.connect_claude)
 
         self._morning: MorningWindow | None = None
+        self._connect_dialog: ConnectDialog | None = None
         self._toast: NudgeToast | None = None
         self._worker: _NudgeWorker | None = None
         self._day = date.today()
@@ -222,22 +224,32 @@ class JoApp(QObject):
         creds = self.planner.credentials
         connected = creds.available and self.cfg.llm_enabled
         self.tray.set_connected(connected, creds.detail)
+        if self._morning is not None and self._morning.isVisible():
+            self._morning.set_online(self.planner.use_llm)
+        if self.board.isVisible():
+            self.board._refresh_auth()
         if notify and connected and not self._was_connected:
             self.tray.notify("Claude 接上了", creds.detail)
         self._was_connected = connected
 
     def connect_claude(self) -> None:
-        """走 OAuth 登录，而不是让用户去环境变量里塞 key。"""
+        """弹对话框。以前这里只发一条托盘气泡 —— 气泡会被吞，用户看到的就是
+        「按钮点了没反应」。主 CTA 必须弹出一定看得见的东西。"""
         creds = self.planner.credentials
         if creds.available:
             self.tray.notify("已经连上了", creds.detail)
             return
-        if auth.launch_login():
-            self.tray.notify(
-                "浏览器里完成登录", "登录完不用重启，我会自己发现。"
-            )
-        else:
-            self.tray.notify("先装一下 ant CLI", auth.INSTALL_HINT)
+        if self._connect_dialog is not None and self._connect_dialog.isVisible():
+            self._connect_dialog.raise_()
+            self._connect_dialog.activateWindow()
+            return
+        dialog = ConnectDialog()
+        dialog.connected.connect(lambda: self._refresh_auth_state())
+        dialog.finished.connect(lambda _: self._refresh_auth_state())
+        dialog.show()
+        dialog.raise_()
+        dialog.activateWindow()
+        self._connect_dialog = dialog
 
     def toggle_break(self) -> None:
         if self.tracker.phase is Phase.BREAK:
