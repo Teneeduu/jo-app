@@ -11,7 +11,7 @@ import logging
 import sys
 from datetime import date, datetime, timedelta
 
-from PySide6.QtCore import QObject, QThread, QTimer, Signal
+from PySide6.QtCore import QObject, QSharedMemory, QThread, QTimer, Signal
 from PySide6.QtWidgets import QApplication, QSystemTrayIcon
 
 from .. import APP_NAME, config
@@ -30,6 +30,22 @@ from .tray import Tray
 log = logging.getLogger(__name__)
 
 TICK_SECONDS = 20
+SINGLE_INSTANCE_KEY = "jo-app-single-instance"
+
+
+def _claim_single_instance() -> QSharedMemory | None:
+    """占住一块共享内存当锁。占不到说明已经有一个在跑了。
+
+    没有这个的话，开机自启撞上手动启动就会变成两个实例 ——
+    两个托盘图标、两个定时器，还同时往一个 SQLite 里写。
+    """
+    lock = QSharedMemory(SINGLE_INSTANCE_KEY)
+    if lock.attach():  # 已经有实例持有
+        lock.detach()
+        return None
+    if not lock.create(1):
+        return None
+    return lock
 
 
 class _NudgeWorker(QThread):
@@ -180,6 +196,7 @@ class JoApp(QObject):
         )
         window = MorningWindow(self.planner, greeting)
         window.tasks_confirmed.connect(self._save_tasks)
+        window.login_requested.connect(self.connect_claude)
         window.show()
         window.raise_()
         window.activateWindow()
@@ -252,6 +269,13 @@ def run(argv: list[str] | None = None) -> int:
         level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
     )
     app = QApplication(argv if argv is not None else sys.argv)
+
+    lock = _claim_single_instance()
+    if lock is None:
+        log.info("已经有一个 jo-app 在跑了，退出")
+        return 0
+    app._instance_lock = lock  # 挂在 app 上，别被 GC 掉
+
     app.setApplicationName(APP_NAME)
     app.setWindowIcon(app_icon())
     app.setStyleSheet(QSS)

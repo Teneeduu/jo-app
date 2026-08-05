@@ -43,14 +43,30 @@ class _PlanWorker(QThread):
             self.failed.emit(str(e))
 
 
+# 连上 Claude 时：随便说。没连上时：照格式写，保证拆得准。
+ONLINE_HINT = "随便说，不用分条。比如「上午写完报告，下午看两章书，晚上跑步」"
+ONLINE_PLACEHOLDER = "说吧……（Ctrl+Enter 提交）"
+
+OFFLINE_HINT = (
+    "离线模式 —— 现在读不懂口语，请<b>一行写一件事</b>，行尾可以写时长"
+    "（<code>2小时</code> / <code>45分钟</code> / <code>1.5h</code>），不写按 30 分钟算。"
+)
+OFFLINE_PLACEHOLDER = (
+    "写完季度报告 2小时\n读书第 3-4 章 50分钟\n跑步 5 公里 30分\n\n"
+    "（一行一件事。Ctrl+Enter 提交）"
+)
+
+
 class MorningWindow(QWidget):
     """确认后发出 tasks_confirmed(list[Task])。"""
 
     tasks_confirmed = Signal(list)
+    login_requested = Signal()
 
     def __init__(self, planner: Planner, greeting: str = "今天打算干点什么？"):
         super().__init__()
         self.planner = planner
+        self.online = planner.use_llm
         self._worker: _PlanWorker | None = None
         self._tasks: list[Task] = []
         self._checks: list[QCheckBox] = []
@@ -67,15 +83,33 @@ class MorningWindow(QWidget):
         self.title.setObjectName("Title")
         root.addWidget(self.title)
 
-        self.hint = QLabel("随便说，不用分条。比如「上午写完报告，下午看两章书，晚上跑步」")
+        self.hint = QLabel(ONLINE_HINT if self.online else OFFLINE_HINT)
         self.hint.setObjectName("Subtitle")
         self.hint.setWordWrap(True)
+        self.hint.setTextFormat(Qt.RichText)
         root.addWidget(self.hint)
 
         self.input = QTextEdit()
-        self.input.setPlaceholderText("说吧……（Ctrl+Enter 提交）")
-        self.input.setFixedHeight(110)
+        self.input.setPlaceholderText(
+            ONLINE_PLACEHOLDER if self.online else OFFLINE_PLACEHOLDER
+        )
+        self.input.setFixedHeight(110 if self.online else 150)
         root.addWidget(self.input)
+
+        # 离线时给一条当场去连的路，而不是让用户自己翻 README
+        self.connect_row = QHBoxLayout()
+        self.connect_hint = QLabel("想直接说人话？")
+        self.connect_hint.setObjectName("Muted")
+        self.connect_row.addWidget(self.connect_hint)
+        self.connect_btn = QPushButton("连接 Claude")
+        self.connect_btn.clicked.connect(self.login_requested.emit)
+        self.connect_row.addWidget(self.connect_btn)
+        self.connect_row.addStretch()
+        if not self.online:
+            root.addLayout(self.connect_row)
+        else:
+            self.connect_hint.setVisible(False)
+            self.connect_btn.setVisible(False)
 
         self.busy = QProgressBar()
         self.busy.setRange(0, 0)
@@ -144,7 +178,9 @@ class MorningWindow(QWidget):
         self.busy.setVisible(False)
         self.submit.setEnabled(True)
         if not tasks:
-            self.hint.setText("没听出具体的事，换个说法？")
+            self.hint.setText(
+                "没拆出东西来。" + ("换个说法？" if self.online else OFFLINE_HINT)
+            )
             return
 
         self._tasks = tasks
@@ -181,7 +217,7 @@ class MorningWindow(QWidget):
         self.input.setVisible(True)
         self.input.clear()
         self.title.setText("今天打算干点什么？")
-        self.hint.setText("再说一遍，说具体点。")
+        self.hint.setText(ONLINE_HINT if self.online else OFFLINE_HINT)
         self.submit.setText("排一下")
         self.later.setText("待会儿再说")
         self.later.clicked.disconnect()

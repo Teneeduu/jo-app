@@ -99,11 +99,17 @@ class Store:
         task.id = cur.lastrowid
         return task
 
-    def tasks_for(self, day: date | None = None) -> list[Task]:
+    def tasks_for(
+        self, day: date | None = None, include_dropped: bool = False
+    ) -> list[Task]:
+        """默认不含已丢弃的 —— 顺延到明天之后，它们不该再出现在今天的清单里，
+        更不该被算进「完成 x/y」的分母。"""
         day = day or date.today()
-        rows = self.conn.execute(
-            "SELECT * FROM tasks WHERE day = ? ORDER BY id", (day.isoformat(),)
-        ).fetchall()
+        sql = "SELECT * FROM tasks WHERE day = ?"
+        if not include_dropped:
+            sql += " AND status != 'dropped'"
+        sql += " ORDER BY id"
+        rows = self.conn.execute(sql, (day.isoformat(),)).fetchall()
         return [self._task(r) for r in rows]
 
     def open_tasks(self, day: date | None = None) -> list[Task]:
@@ -239,9 +245,12 @@ class Store:
         return _dt(row["created_at"]) if row else None
 
     def planned_today(self) -> bool:
-        """今天是否已经录过任务（用来决定开机要不要弹晨间窗口）。"""
+        """今天是否已经录过任务（用来决定开机要不要弹晨间窗口）。
+
+        丢弃的不算 —— 把今天的事全顺延走之后，等于还没规划，该重新问一遍。
+        """
         row = self.conn.execute(
-            "SELECT COUNT(*) AS n FROM tasks WHERE day = ?",
+            "SELECT COUNT(*) AS n FROM tasks WHERE day = ? AND status != 'dropped'",
             (date.today().isoformat(),),
         ).fetchone()
         return row["n"] > 0

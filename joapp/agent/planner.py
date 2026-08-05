@@ -7,19 +7,16 @@
 from __future__ import annotations
 
 import logging
-import re
 from datetime import date
 
 from ..config import Config
 from ..core.models import Goal, Nudge, Task
 from ..core.store import Store
-from . import auth
+from . import auth, parse
 from .llm import LLM, LLMUnavailable
 from .rules import Snapshot, evaluate
 
 log = logging.getLogger(__name__)
-
-_SPLIT = re.compile(r"[\n；;,，。]|然后|接着|再")
 
 
 class Planner:
@@ -54,7 +51,7 @@ class Planner:
             except LLMUnavailable as e:
                 log.warning("LLM 拆解失败，改用本地规则: %s", e)
         self.last_source = "rules"
-        return self._split_locally(raw, day), ""
+        return self._split_locally(raw, day)
 
     def _to_tasks(self, items: list[dict], goals: list[Goal], day: date) -> list[Task]:
         by_title = {g.title: g.id for g in goals}
@@ -73,10 +70,24 @@ class Planner:
             )
         return tasks
 
-    def _split_locally(self, raw: str, day: date) -> list[Task]:
-        """没有模型时的兜底：按标点和连接词切一刀。"""
-        parts = [p.strip(" -•\t") for p in _SPLIT.split(raw)]
-        return [Task(title=p, day=day) for p in parts if len(p) >= 2]
+    def _split_locally(self, raw: str, day: date) -> tuple[list[Task], str]:
+        """没有模型时按格式解析。点评里直接说清楚它是怎么拆的、怎么写更准。"""
+        parsed = parse.parse_plan(raw)
+        tasks = [
+            Task(title=p.title, day=day, estimate_minutes=p.minutes) for p in parsed
+        ]
+        if not tasks:
+            return [], ""
+
+        guessed = sum(1 for p in parsed if not p.explicit_minutes)
+        notes = []
+        if parse.used_fallback_split(raw):
+            notes.append("离线拆的：整段按标点切的，可能不准 —— 一行一件事最稳")
+        else:
+            notes.append(f"离线拆的：按行分了 {len(tasks)} 条")
+        if guessed:
+            notes.append(f"其中 {guessed} 条没写时长，先按 {parse.DEFAULT_MINUTES} 分钟算")
+        return tasks, "。".join(notes) + "。"
 
     # ---------- 该不该提醒，提醒说什么 ----------
 

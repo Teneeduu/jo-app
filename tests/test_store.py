@@ -48,6 +48,28 @@ def test_planned_today_reflects_task_presence(tmp_path):
     assert store.planned_today() is True
 
 
+def test_dropped_tasks_leave_todays_list(tmp_path):
+    """顺延走的任务不该继续挂在今天，也不该算进「完成 x/y」的分母。"""
+    store = make_store(tmp_path)
+    kept = store.add_task(Task(title="留下的"))
+    moved = store.add_task(Task(title="顺延走的"))
+    store.set_task_status(moved.id, TaskStatus.DROPPED)
+
+    assert [t.title for t in store.tasks_for()] == ["留下的"]
+    assert len(store.tasks_for(include_dropped=True)) == 2
+    assert store.open_tasks() == [t for t in store.tasks_for() if t.id == kept.id]
+
+
+def test_dropping_everything_counts_as_unplanned(tmp_path):
+    """把今天的事全顺延走 = 还没规划，开机该重新问一遍。"""
+    store = make_store(tmp_path)
+    task = store.add_task(Task(title="全都挪走"))
+    assert store.planned_today() is True
+
+    store.set_task_status(task.id, TaskStatus.DROPPED)
+    assert store.planned_today() is False
+
+
 def test_session_time_lands_on_the_task(tmp_path):
     store = make_store(tmp_path)
     task = store.add_task(Task(title="看书"))
