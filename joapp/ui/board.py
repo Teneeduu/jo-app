@@ -114,12 +114,7 @@ class DayBoard(QWidget):
 
     def _refresh_auth(self) -> None:
         creds = self.planner.credentials
-        if not self.planner.cfg.llm_enabled:
-            text = "Claude：配置里关掉了，全部走本地规则"
-        elif creds.available:
-            text = f"Claude：{creds.detail}"
-        else:
-            text = f"Claude：{creds.detail} —— 现在提醒由本地规则生成"
+        text = self.planner.status_line
         if creds.warning:
             text += f"\n⚠ {creds.warning}"
         self.auth_label.setText(text)

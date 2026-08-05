@@ -225,7 +225,7 @@ class JoApp(QObject):
         connected = creds.available and self.cfg.llm_enabled
         self.tray.set_connected(connected, creds.detail)
         if self._morning is not None and self._morning.isVisible():
-            self._morning.set_online(self.planner.use_llm)
+            self._morning.set_online(self.planner.llm_working)
         if self.board.isVisible():
             self.board._refresh_auth()
         if notify and connected and not self._was_connected:

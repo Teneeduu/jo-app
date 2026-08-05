@@ -66,7 +66,9 @@ class MorningWindow(QWidget):
     def __init__(self, planner: Planner, greeting: str = "今天打算干点什么？"):
         super().__init__()
         self.planner = planner
-        self.online = planner.use_llm
+        # 用 llm_working 而不是 use_llm —— 有凭据但调不通时（比如没额度），
+        # 该给的是「按格式写」的提示，不是「随便说」。
+        self.online = planner.llm_working
         self._worker: _PlanWorker | None = None
         self._tasks: list[Task] = []
         self._checks: list[QCheckBox] = []
