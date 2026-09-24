@@ -90,7 +90,56 @@ QProgressBar::chunk {{
     background: {ACCENT};
     border-radius: 5px;
 }}
-QCheckBox {{ spacing: 8px; }}
+QCheckBox {{ spacing: 8px; padding: 4px 0; }}
+QCheckBox[done="true"] {{ color: {MUTED}; }}
+QPushButton#SectionHeader {{
+    border: none;
+    border-bottom: 1px solid {BORDER};
+    border-radius: 0;
+    padding: 10px 2px 6px 2px;
+    text-align: left;
+    font-size: 15px;
+    font-weight: 600;
+}}
+QPushButton#SectionHeader:hover {{ color: {ACCENT}; }}
+QPushButton#Scope {{
+    padding: 6px 12px;
+}}
+QPushButton#Scope:checked {{
+    background: {ACCENT};
+    border-color: {ACCENT};
+    color: #ffffff;
+    font-weight: 600;
+}}
+QToolButton#Delete {{
+    background: transparent;
+    border: none;
+    color: {MUTED};
+    font-size: 16px;
+    padding: 0 6px;
+}}
+QToolButton#Delete:hover {{ color: {ACCENT}; }}
+QSpinBox {{
+    background: {BG};
+    border: 1px solid {BORDER};
+    border-radius: 6px;
+    padding: 4px 6px;
+}}
+QScrollBar:vertical {{
+    background: transparent;
+    width: 8px;
+    margin: 0;
+}}
+QScrollBar::handle:vertical {{
+    background: {BORDER};
+    border-radius: 4px;
+    min-height: 32px;
+}}
+QScrollBar::handle:vertical:hover {{ background: {MUTED}; }}
+QScrollBar::add-line, QScrollBar::sub-line,
+QScrollBar::add-page, QScrollBar::sub-page {{ height: 0; background: none; }}
+QLabel#Ok {{ color: #5fb07a; font-size: 12px; }}
+QLabel#Bad {{ color: {ACCENT}; font-size: 12px; }}
 """
 
 

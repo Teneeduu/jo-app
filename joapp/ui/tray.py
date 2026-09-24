@@ -1,4 +1,4 @@
-"""托盘图标。应用平时就活在这里，没有任务栏窗口。"""
+"""托盘图标。窗口关掉之后应用就活在这里，提醒照常。"""
 
 from __future__ import annotations
 
@@ -9,10 +9,9 @@ from .style import app_icon
 
 
 class Tray(QObject):
-    plan_requested = Signal()
-    board_requested = Signal()
-    break_requested = Signal()
-    login_requested = Signal()
+    open_requested = Signal()
+    test_requested = Signal()
+    toggle_reminder = Signal()
     quit_requested = Signal()
 
     def __init__(self, parent: QObject | None = None):
@@ -21,14 +20,12 @@ class Tray(QObject):
         self.icon.setToolTip("jo-app")
 
         menu = QMenu()
-        menu.addAction("今天的清单", self.board_requested.emit)
-        menu.addAction("现在规划", self.plan_requested.emit)
+        menu.addAction("打开清单", self.open_requested.emit)
         menu.addSeparator()
-        self.break_action = menu.addAction("开始休息", self.break_requested.emit)
+        menu.addAction("试一下提醒", self.test_requested.emit)
+        self.remind_action = menu.addAction("暂停提醒", self.toggle_reminder.emit)
         menu.addSeparator()
-        self.login_action = menu.addAction("连接 Claude…", self.login_requested.emit)
-        menu.addSeparator()
-        menu.addAction("退出", self.quit_requested.emit)
+        menu.addAction("退出（提醒一起关）", self.quit_requested.emit)
         self._menu = menu
 
         self.icon.setContextMenu(menu)
@@ -36,16 +33,15 @@ class Tray(QObject):
         self.icon.show()
 
     def _on_activated(self, reason) -> None:
-        if reason == QSystemTrayIcon.Trigger:  # 左键单击
-            self.board_requested.emit()
+        if reason in (QSystemTrayIcon.Trigger, QSystemTrayIcon.DoubleClick):
+            self.open_requested.emit()
 
-    def set_on_break(self, on_break: bool) -> None:
-        self.break_action.setText("结束休息" if on_break else "开始休息")
-
-    def set_connected(self, connected: bool, detail: str = "") -> None:
-        self.login_action.setText("Claude 已连接" if connected else "连接 Claude…")
-        self.login_action.setEnabled(not connected)
+    def set_reminder(self, enabled: bool, detail: str = "") -> None:
+        self.remind_action.setText("暂停提醒" if enabled else "开启提醒")
         self.icon.setToolTip(f"jo-app · {detail}" if detail else "jo-app")
 
     def notify(self, title: str, body: str) -> None:
         self.icon.showMessage(title, body, app_icon(), 5000)
+
+    def hide(self) -> None:
+        self.icon.hide()

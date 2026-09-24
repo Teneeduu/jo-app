@@ -1,44 +1,39 @@
-"""应用装配：把 store / planner / tracker / 界面接到一起。
+"""应用装配：store / 提醒进程 / 窗口 / 托盘接到一起。
 
-主循环很简单 —— 每 TICK_SECONDS 秒取一次空闲时长喂给 FocusTracker，
-然后拍一张 Snapshot 问 Planner「现在该说点什么吗」。
-问的过程可能走网络，所以放后台线程。
+启动时：弹出主窗口（每天任务每次打开都要看见），后台拉起提醒进程。
+退出时：先把提醒进程杀掉再走。崩溃的情况由 reminder.py 里的 job object 兜底。
 """
 
 from __future__ import annotations
 
 import logging
 import sys
-from datetime import date, datetime, timedelta
+from datetime import date
 
-from PySide6.QtCore import QObject, QSharedMemory, QThread, QTimer, Signal
+from PySide6.QtCore import QObject, QSharedMemory, QTimer
+from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtWidgets import QApplication, QSystemTrayIcon
 
 from .. import APP_NAME, config
-from ..agent import auth
-from ..agent.planner import Planner
-from ..agent.rules import COOLDOWN, Snapshot
-from ..core.models import Nudge, NudgeKind, TaskStatus
+from ..core.models import Scope
 from ..core.store import Store
-from ..scheduler import FocusTracker, Phase, idle_minutes
-from .board import DayBoard
-from .connect import ConnectDialog
-from .morning import MorningWindow
-from .nudge import NudgeToast
+from ..reminder import Reminder
 from .style import QSS, app_icon
 from .tray import Tray
+from .window import MainWindow
 
 log = logging.getLogger(__name__)
 
-TICK_SECONDS = 20
 SINGLE_INSTANCE_KEY = "jo-app-single-instance"
+SHOW_SERVER = "jo-app-show-window"
+STATUS_POLL_SECONDS = 5
 
 
 def _claim_single_instance() -> QSharedMemory | None:
     """占住一块共享内存当锁。占不到说明已经有一个在跑了。
 
     没有这个的话，开机自启撞上手动启动就会变成两个实例 ——
-    两个托盘图标、两个定时器，还同时往一个 SQLite 里写。
+    两个托盘图标、两套提醒一起念，还同时往一个 SQLite 里写。
     """
     lock = QSharedMemory(SINGLE_INSTANCE_KEY)
     if lock.attach():  # 已经有实例持有
@@ -49,22 +44,15 @@ def _claim_single_instance() -> QSharedMemory | None:
     return lock
 
 
-class _NudgeWorker(QThread):
-    """在后台问 Planner 要不要提醒（可能触发一次 API 调用）。"""
-
-    ready = Signal(object)
-
-    def __init__(self, planner: Planner, snapshot: Snapshot):
-        super().__init__()
-        self.planner = planner
-        self.snapshot = snapshot
-
-    def run(self) -> None:  # pragma: no cover - 线程体
-        try:
-            self.ready.emit(self.planner.next_nudge(self.snapshot))
-        except Exception:
-            log.exception("生成提醒时出错")
-            self.ready.emit(None)
+def _ask_running_instance_to_show() -> None:
+    """再双击一次快捷方式 = 把已经在托盘里的那个叫出来，而不是什么都不发生。"""
+    sock = QLocalSocket()
+    sock.connectToServer(SHOW_SERVER)
+    if sock.waitForConnected(1000):
+        sock.write(b"show")
+        sock.flush()
+        sock.waitForBytesWritten(1000)
+        sock.disconnectFromServer()
 
 
 class JoApp(QObject):
@@ -73,205 +61,124 @@ class JoApp(QObject):
         self.app = app
         self.cfg = config.load()
         self.store = Store()
-        self.planner = Planner(self.cfg, self.store)
-        self.tracker = FocusTracker(
-            idle_threshold_minutes=self.cfg.idle_threshold_minutes
-        )
+        self.reminder = Reminder(config.REMINDER_LOG)
+        self._told_about_tray = False
+        self._last_state = ""
+        self._day = date.today()
 
         self.tray = Tray(self)
-        self.tray.plan_requested.connect(self.open_morning)
-        self.tray.board_requested.connect(self.open_board)
-        self.tray.break_requested.connect(self.toggle_break)
-        self.tray.login_requested.connect(self.connect_claude)
+        self.tray.open_requested.connect(self.open_window)
+        self.tray.test_requested.connect(self.test_reminder)
+        self.tray.toggle_reminder.connect(
+            lambda: self.set_reminder_enabled(not self.cfg.remind_enabled)
+        )
         self.tray.quit_requested.connect(self.quit)
 
-        self.board = DayBoard(self.store, self.planner)
-        self.board.plan_requested.connect(self.open_morning)
-        self.board.login_requested.connect(self.connect_claude)
+        self.window = MainWindow(
+            self.store,
+            collapsed=list(self.cfg.collapsed),
+            minutes=self.cfg.remind_minutes,
+            enabled=self.cfg.remind_enabled,
+        )
+        self.window.hidden_to_tray.connect(self._on_hidden)
+        self.window.quit_requested.connect(self.quit)
+        self.window.test_reminder.connect(self.test_reminder)
+        self.window.reminder_enabled_changed.connect(self.set_reminder_enabled)
+        self.window.reminder_minutes_changed.connect(self.set_reminder_minutes)
+        self.window.collapsed_changed.connect(self._save_collapsed)
 
-        self._morning: MorningWindow | None = None
-        self._connect_dialog: ConnectDialog | None = None
-        self._toast: NudgeToast | None = None
-        self._worker: _NudgeWorker | None = None
-        self._day = date.today()
-        self._was_connected = False
-        self._refresh_auth_state(notify=False)  # 启动时别为「本来就连着」弹通知
+        # 每天任务每次打开都得看见 —— 上次折叠了也展开
+        self.window.expand(Scope.DAILY)
+
+        if self.cfg.remind_enabled:
+            self.reminder.start(
+                self.cfg.remind_voice, self.cfg.remind_popup, self.cfg.remind_minutes
+            )
+        self._poll()
 
         self.timer = QTimer(self)
-        self.timer.timeout.connect(self.tick)
-        self.timer.start(TICK_SECONDS * 1000)
+        self.timer.timeout.connect(self._poll)
+        self.timer.start(STATUS_POLL_SECONDS * 1000)
 
-        # 开机启动时如果今天还没规划，直接把晨间窗口顶上来
-        QTimer.singleShot(1500, self._greet_if_needed)
+        app.aboutToQuit.connect(self.reminder.stop)  # 不管从哪条路退出都收干净
 
-    # ---------- 主循环 ----------
+        QLocalServer.removeServer(SHOW_SERVER)  # 上次崩溃留下的同名管道
+        self._show_server = QLocalServer(self)
+        self._show_server.newConnection.connect(self._on_show_request)
+        self._show_server.listen(SHOW_SERVER)
+        self.window.bring_up()
 
-    def tick(self) -> None:
-        now = datetime.now()
-        if now.date() != self._day:  # 跨天了，重置计时
-            self._day = now.date()
-            self.tracker.reset()
+    # ---------- 周期检查 ----------
 
-        self.tracker.tick(idle_minutes(), now)
-        self.tray.set_on_break(self.tracker.phase is Phase.BREAK)
-        self._refresh_auth_state()
+    def _poll(self) -> None:
+        # 跨天了：每天任务重置、当天任务换一天，重画一遍
+        if date.today() != self._day:
+            self._day = date.today()
+            self.window.refresh()
 
-        if self._toast is not None or self._worker is not None:
-            return  # 上一条还没处理完，不叠加
-
-        snapshot = self._snapshot(now)
-        self._worker = _NudgeWorker(self.planner, snapshot)
-        self._worker.ready.connect(self._on_nudge)
-        self._worker.finished.connect(self._clear_worker)
-        self._worker.start()
-
-    def _clear_worker(self) -> None:
-        self._worker = None
-
-    def _snapshot(self, now: datetime) -> Snapshot:
-        return Snapshot(
-            now=now,
-            cfg=self.cfg,
-            tasks=self.store.tasks_for(now.date()),
-            goals=self.store.goals(),
-            planned_today=self.store.planned_today(),
-            focus_streak_minutes=self.tracker.focus_minutes,
-            idle_minutes=idle_minutes(),
-            on_break=self.tracker.phase is Phase.BREAK,
-            break_elapsed_minutes=self.tracker.break_minutes,
-            last_nudge={
-                kind: at
-                for kind in COOLDOWN
-                if (at := self.store.last_nudge_at(kind.value)) is not None
-            },
-        )
+        status = self.reminder.status()
+        self.window.set_reminder_status(status)
+        self.tray.set_reminder(self.cfg.remind_enabled, status.detail)
+        if status.state == "failed" and self._last_state != "failed":
+            log.warning("提醒进程失败: %s", status.detail)
+            self.tray.notify("提醒没跑起来", status.detail)
+        self._last_state = status.state
 
     # ---------- 提醒 ----------
 
-    def _on_nudge(self, nudge: Nudge | None) -> None:
-        if nudge is None:
-            return
-        if nudge.kind is NudgeKind.PLAN:
-            self.open_morning()
-            return
-        toast = NudgeToast(nudge, self.cfg.nudge_seconds)
-        toast.action_chosen.connect(self._on_action)
-        toast.show_at_corner()
-        self._toast = toast
-
-    def _on_action(self, action: str, nudge: Nudge) -> None:
-        self._toast = None  # 气泡设了 WA_DeleteOnClose，这里必须自己松手
-        kind = nudge.kind
-        if kind is NudgeKind.BREAK:
-            if action.startswith("好"):
-                self.tracker.start_break()
-            else:
-                self.tracker.snooze(10)
-        elif kind is NudgeKind.RESUME:
-            if action.startswith("开始"):
-                self.tracker.end_break()
-            else:
-                self.tracker.break_minutes = max(0.0, self.tracker.break_minutes - 5)
-        elif kind is NudgeKind.REVIEW and action.startswith("顺延"):
-            self.carry_over()
-        elif kind is NudgeKind.GOAL and action.startswith(("更新", "改个", "今天推")):
-            self.open_board()
-        elif kind is NudgeKind.IDLE and action.startswith("今天到此"):
-            self.tracker.reset()
-        self.tray.set_on_break(self.tracker.phase is Phase.BREAK)
-
-    # ---------- 动作 ----------
-
-    def _greet_if_needed(self) -> None:
-        if not self.store.planned_today():
-            self.open_morning()
-
-    def open_morning(self) -> None:
-        if self._morning is not None and self._morning.isVisible():
-            self._morning.raise_()
-            self._morning.activateWindow()
-            return
-        greeting = (
-            "今天打算干点什么？"
-            if not self.store.planned_today()
-            else "还想加点什么？"
-        )
-        window = MorningWindow(self.planner, greeting)
-        window.tasks_confirmed.connect(self._save_tasks)
-        window.login_requested.connect(self.connect_claude)
-        window.show()
-        window.raise_()
-        window.activateWindow()
-        self._morning = window
-
-    def _save_tasks(self, tasks: list) -> None:
-        for task in tasks:
-            self.store.add_task(task)
-        self.board.refresh()
-        total = sum(t.estimate_minutes for t in tasks)
-        self.tray.notify(
-            f"记下了 {len(tasks)} 件事", f"预计 {total} 分钟。慢慢来，我盯着时间。"
-        )
-
-    def open_board(self) -> None:
-        self.board.refresh()
-        self.board.show()
-        self.board.raise_()
-        self.board.activateWindow()
-
-    def _refresh_auth_state(self, notify: bool = True) -> None:
-        """凭据可能在应用跑着的时候才出现（用户去 ant auth login 了）。"""
-        creds = self.planner.credentials
-        connected = creds.available and self.cfg.llm_enabled
-        self.tray.set_connected(connected, creds.detail)
-        if self._morning is not None and self._morning.isVisible():
-            self._morning.set_online(self.planner.llm_working)
-        if self.board.isVisible():
-            self.board._refresh_auth()
-        if notify and connected and not self._was_connected:
-            self.tray.notify("Claude 接上了", creds.detail)
-        self._was_connected = connected
-
-    def connect_claude(self) -> None:
-        """弹对话框。以前这里只发一条托盘气泡 —— 气泡会被吞，用户看到的就是
-        「按钮点了没反应」。主 CTA 必须弹出一定看得见的东西。"""
-        creds = self.planner.credentials
-        if creds.available:
-            self.tray.notify("已经连上了", creds.detail)
-            return
-        if self._connect_dialog is not None and self._connect_dialog.isVisible():
-            self._connect_dialog.raise_()
-            self._connect_dialog.activateWindow()
-            return
-        dialog = ConnectDialog()
-        dialog.connected.connect(lambda: self._refresh_auth_state())
-        dialog.finished.connect(lambda _: self._refresh_auth_state())
-        dialog.show()
-        dialog.raise_()
-        dialog.activateWindow()
-        self._connect_dialog = dialog
-
-    def toggle_break(self) -> None:
-        if self.tracker.phase is Phase.BREAK:
-            self.tracker.end_break()
+    def set_reminder_enabled(self, enabled: bool) -> None:
+        self.cfg.remind_enabled = enabled
+        config.save(self.cfg)
+        if enabled:
+            self.reminder.start(
+                self.cfg.remind_voice, self.cfg.remind_popup, self.cfg.remind_minutes
+            )
         else:
-            self.tracker.start_break()
-        self.tray.set_on_break(self.tracker.phase is Phase.BREAK)
+            self.reminder.stop()
+        self.window.set_reminder_enabled(enabled)
+        self._poll()
 
-    def carry_over(self) -> None:
-        """把今天没做完的顺延到明天。"""
-        tomorrow = date.today() + timedelta(days=1)
-        moved = 0
-        for task in self.store.open_tasks():
-            self.store.set_task_status(task.id, TaskStatus.DROPPED)
-            task.id, task.day = None, tomorrow
-            self.store.add_task(task)
-            moved += 1
-        if moved:
-            self.tray.notify("已顺延", f"{moved} 件事挪到了明天。")
+    def set_reminder_minutes(self, minutes: int) -> None:
+        if minutes == self.cfg.remind_minutes:
+            return
+        self.cfg.remind_minutes = minutes
+        config.save(self.cfg)
+        if self.cfg.remind_enabled:  # 重启一下，从现在开始重新计时
+            self.reminder.start(
+                self.cfg.remind_voice, self.cfg.remind_popup, minutes
+            )
+        self._poll()
+
+    def test_reminder(self) -> None:
+        self.reminder.fire_now(self.cfg.remind_voice, self.cfg.remind_popup)
+
+    # ---------- 窗口 ----------
+
+    def open_window(self) -> None:
+        self.window.bring_up()
+
+    def _on_show_request(self) -> None:
+        while self._show_server.hasPendingConnections():
+            self._show_server.nextPendingConnection().deleteLater()
+        self.window.expand(Scope.DAILY)
+        self.open_window()
+
+    def _on_hidden(self) -> None:
+        if not self._told_about_tray:
+            self._told_about_tray = True
+            self.tray.notify(
+                "jo-app 还在托盘里", "提醒照常。要彻底退出，右键托盘图标 →「退出」。"
+            )
+
+    def _save_collapsed(self, collapsed: list) -> None:
+        self.cfg.collapsed = collapsed
+        config.save(self.cfg)
 
     def quit(self) -> None:
         self.timer.stop()
+        self._show_server.close()
+        self.reminder.stop()
+        self.tray.hide()
         self.store.close()
         self.app.quit()
 
@@ -284,7 +191,8 @@ def run(argv: list[str] | None = None) -> int:
 
     lock = _claim_single_instance()
     if lock is None:
-        log.info("已经有一个 jo-app 在跑了，退出")
+        log.info("已经有一个 jo-app 在跑了，叫它把窗口拿出来")
+        _ask_running_instance_to_show()
         return 0
     app._instance_lock = lock  # 挂在 app 上，别被 GC 掉
 

@@ -1,4 +1,4 @@
-"""配置：读写 ~/.jo-app/config.json，所有默认值都在这里。"""
+"""配置：读写 %APPDATA%\\jo-app\\config.json，所有默认值都在这里。"""
 
 from __future__ import annotations
 
@@ -23,29 +23,20 @@ def data_dir() -> Path:
 
 CONFIG_PATH = data_dir() / "config.json"
 DB_PATH = data_dir() / "jo.db"
+REMINDER_LOG = data_dir() / "reminder.log"
 
 
 @dataclass
 class Config:
-    # 番茄钟 / 久坐提醒（分钟）
-    focus_minutes: int = 45
-    break_minutes: int = 5
-    idle_threshold_minutes: int = 5  # 无输入超过这么久算离开电脑，暂停计时
+    # 定时提醒：开应用就在后台跑，退出应用一起关
+    remind_enabled: bool = True
+    remind_minutes: int = 60
+    remind_voice: str = "喝水时间到了，顺便起来活动一下吧"  # 空串 = 不念
+    remind_popup: str = "休息下吧"  # 空串 = 不弹窗
 
-    # 每日节奏
-    morning_prompt_hour: int = 0  # 0 = 开机即问；否则等到这个整点之后才弹
-    evening_review_hour: int = 22  # 晚间复盘提醒时间，None 关闭
-
-    # 智能层
-    # 只表示「我愿不愿意用」。有没有凭据是另一回事，由 agent/auth.py 探测，
-    # 真正的凭据解析交给 SDK —— 见 Planner.use_llm。
-    llm_enabled: bool = True
-    model: str = "claude-opus-5"
-    effort: str = "medium"  # low | medium | high | xhigh | max
-
-    # 界面
-    theme: str = "dark"
-    nudge_seconds: int = 12  # 提醒气泡停留时长
+    # 界面：折叠起来的分组（"daily" / "today" / "weekly" / "yearly"）。
+    # 「每天」不管存的是什么，每次启动都会展开。
+    collapsed: list = field(default_factory=list)
 
     _extra: dict = field(default_factory=dict)
 
@@ -61,6 +52,7 @@ def load() -> Config:
         return Config()
     known = {f for f in Config.__dataclass_fields__ if not f.startswith("_")}
     cfg = Config(**{k: v for k, v in raw.items() if k in known})
+    # 旧版本的键（llm_enabled、focus_minutes……）原样留着，不删用户的文件内容
     cfg._extra = {k: v for k, v in raw.items() if k not in known}
     return cfg
 
