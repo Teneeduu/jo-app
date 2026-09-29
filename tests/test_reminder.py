@@ -116,3 +116,29 @@ def _alive(pid: int) -> bool:
         text=True,
     ).stdout
     return f'"{pid}"' in out
+
+
+class _Running:
+    pid = 1
+
+    def poll(self):
+        return None
+
+
+@pytest.mark.parametrize(
+    "line,warns",
+    [
+        ("jo-app-reminder-ready|Microsoft Huihui Desktop|zh-CN", False),
+        ("jo-app-reminder-ready|Microsoft Zira Desktop|en-US", True),
+        ("jo-app-reminder-ready", False),  # 旧格式 / 没报语音：不乱警告
+    ],
+)
+def test_warns_when_no_chinese_voice(tmp_path, line, warns):
+    """别的电脑可能只装了英文语音 —— 念中文会听不清，得在窗口里说出来。"""
+    log = tmp_path / "r.log"
+    log.write_text(line + "\n", encoding="utf-8")
+    r = reminder.Reminder(log)
+    r._proc, r.minutes = _Running(), 60
+    status = r.status()
+    assert status.state == "running"
+    assert ("没有中文语音" in status.detail) is warns

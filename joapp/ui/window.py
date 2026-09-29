@@ -1,5 +1,7 @@
 """主窗口：一个输入框 + 四个分组（每天 / 当天 / 每周 / 每年），底下是提醒状态。
 
+每天 / 每周 / 每年分组里显示设好的奖励；勾任务勾到够线时弹框发奖励。
+
 加任务就是打一行字回车，不估时间、不拆解。分组标题点一下折叠 / 展开。
 关窗口只是缩回托盘 —— 提醒还要接着跑；真退出走「退出」按钮或托盘菜单。
 """
@@ -26,11 +28,13 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..core.models import Scope, Todo
+from ..core.models import REWARD_SCOPES, Reward, Scope, Todo
 from ..core.store import Store
 from ..reminder import Status
+from .rewards import EarnedDialog, RewardsDialog
 
 ORDER = (Scope.DAILY, Scope.TODAY, Scope.WEEKLY, Scope.YEARLY)
+OK_COLOR = "#5fb07a"
 WEEKDAYS = "一二三四五六日"
 
 
@@ -57,9 +61,20 @@ class _Section(QWidget):
         layout.addWidget(self.header)
 
         self.body = QWidget()
-        self._rows = QVBoxLayout(self.body)
-        self._rows.setContentsMargins(4, 2, 0, 6)
+        body = QVBoxLayout(self.body)
+        body.setContentsMargins(4, 2, 0, 6)
+        body.setSpacing(2)
+        self.reward_label = QLabel("")
+        self.reward_label.setObjectName("Reward")
+        self.reward_label.setTextFormat(Qt.RichText)
+        self.reward_label.setWordWrap(True)
+        self.reward_label.setVisible(False)
+        body.addWidget(self.reward_label)
+        rows = QWidget()
+        self._rows = QVBoxLayout(rows)
+        self._rows.setContentsMargins(0, 0, 0, 0)
         self._rows.setSpacing(0)
+        body.addWidget(rows)
         layout.addWidget(self.body)
 
         self._todos: list[Todo] = []
@@ -79,6 +94,20 @@ class _Section(QWidget):
         for todo in todos:
             self._rows.addWidget(self._row(todo, today))
         self._update_header()
+
+    def set_rewards(self, rewards: list[Reward]) -> None:
+        """「🎁 50% 看一集剧 ✓ · 100% 吃顿好的」—— 拿到的标绿打勾。"""
+        if not rewards:
+            self.reward_label.setVisible(False)
+            return
+        parts = []
+        for w in rewards:
+            text = f"{w.percent}% {_escape(w.text)}"
+            parts.append(
+                f'<span style="color:{OK_COLOR}">{text} ✓</span>' if w.earned else text
+            )
+        self.reward_label.setText("🎁 " + "  ·  ".join(parts))
+        self.reward_label.setVisible(True)
 
     def _row(self, todo: Todo, today: date) -> QWidget:
         row = QWidget()
@@ -109,7 +138,11 @@ class _Section(QWidget):
     def _update_header(self) -> None:
         arrow = "▸" if self.collapsed else "▾"
         done = sum(1 for t in self._todos if t.done)
-        count = f"   {done}/{len(self._todos)}" if self._todos else ""
+        count = ""
+        if self._todos:
+            count = f"   {done}/{len(self._todos)}"
+            if self.scope in REWARD_SCOPES:
+                count += f"  ·  {done * 100 // len(self._todos)}%"
         self.header.setText(f"{arrow}  {self.scope.label}{count}")
 
     def set_collapsed(self, collapsed: bool) -> None:
@@ -124,6 +157,10 @@ class _Section(QWidget):
     def _apply_collapsed(self) -> None:
         self.body.setVisible(not self.collapsed)
         self._update_header()
+
+
+def _escape(text: str) -> str:
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
 def _mark_done(box: QCheckBox, done: bool) -> None:
@@ -243,6 +280,10 @@ class MainWindow(QWidget):
         self.status = QLabel("")
         self.status.setWordWrap(True)
         bottom.addWidget(self.status, 1)
+        rewards_btn = QPushButton("🎁 奖励")
+        rewards_btn.setToolTip("给每天 / 每周 / 每年的完成度设奖励")
+        rewards_btn.clicked.connect(self.open_rewards)
+        bottom.addWidget(rewards_btn)
         quit_btn = QPushButton("退出")
         quit_btn.setToolTip("退出 jo-app，后台提醒一起关掉")
         quit_btn.clicked.connect(self.quit_requested.emit)
@@ -263,6 +304,8 @@ class MainWindow(QWidget):
         )
         for scope, section in self.sections.items():
             section.set_todos(self.store.todos(scope, today), today)
+            if scope in REWARD_SCOPES:
+                section.set_rewards(self.store.rewards(scope, today))
 
     def _current_scope(self) -> Scope:
         return ORDER[max(0, self._scope_group.checkedId())]
@@ -281,6 +324,24 @@ class MainWindow(QWidget):
     def _toggle(self, todo: Todo, checked: bool) -> None:
         self.store.set_done(todo, checked)
         self.refresh()
+        if checked and todo.scope in REWARD_SCOPES:
+            self._celebrate(todo.scope)
+
+    # ---------- 奖励 ----------
+
+    def open_rewards(self) -> None:
+        RewardsDialog(self.store, self).exec()
+        self.refresh()
+        # 新设的奖励可能已经够线了（比如今天已经做完一半再设 50%）—— 当场发
+        for scope in REWARD_SCOPES:
+            self._celebrate(scope)
+
+    def _celebrate(self, scope: Scope) -> None:
+        earned = self.store.claim_reached(scope)
+        if not earned:
+            return
+        self.refresh()  # 分组里的奖励要标成已拿到
+        EarnedDialog(earned, {scope: self.store.progress(scope)}, self).exec()
 
     def _delete(self, todo: Todo) -> None:
         note = "" if todo.scope is Scope.TODAY else f"\n\n这是{todo.scope.label}都会出现的任务，删了以后就不再出现。"

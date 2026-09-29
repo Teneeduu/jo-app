@@ -44,7 +44,7 @@ $s = New-Object System.Speech.Synthesis.SpeechSynthesizer
 # 默认语音可能是英文的（Zira），念中文会变成乱读或者没声音 —— 有中文语音就换上
 $zh = $s.GetInstalledVoices() | Where-Object {{ $_.Enabled -and $_.VoiceInfo.Culture.Name -like 'zh*' }} | Select-Object -First 1
 if ($zh) {{ $s.SelectVoice($zh.VoiceInfo.Name) }}
-[Console]::Out.WriteLine('{ready}')
+[Console]::Out.WriteLine('{ready}|' + $s.Voice.Name + '|' + $s.Voice.Culture.Name)
 [Console]::Out.Flush()
 do {{
     Start-Sleep -Seconds {seconds}
@@ -79,9 +79,16 @@ def encode(script: str) -> str:
     return base64.b64encode(script.encode("utf-16-le")).decode("ascii")
 
 
+def _powershell() -> str:
+    """用绝对路径：别的电脑上 PATH 被改过也照样找得到 Windows PowerShell 5.1。"""
+    root = os.environ.get("SystemRoot", r"C:\Windows")
+    full = os.path.join(root, "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
+    return full if os.path.exists(full) else "powershell.exe"
+
+
 def command(script: str) -> list[str]:
     return [
-        "powershell.exe",
+        _powershell(),
         "-NoProfile",
         "-NonInteractive",
         "-ExecutionPolicy",
@@ -263,10 +270,19 @@ class Reminder:
         output = self._read_log()
         code = self._proc.poll()
         if code is not None:
-            tail = _last_lines(output.replace(READY_MARK, ""))
+            tail = _last_lines(
+                "\n".join(ln for ln in output.splitlines() if not ln.startswith(READY_MARK))
+            )
             return Status("failed", f"后台进程退出了（代码 {code}）" + (f"：{tail}" if tail else ""))
-        if READY_MARK in output:
-            return Status("running", f"每 {self.minutes} 分钟提醒一次")
+        ready = next(
+            (ln for ln in output.splitlines() if ln.startswith(READY_MARK)), None
+        )
+        if ready is not None:
+            detail = f"每 {self.minutes} 分钟提醒一次"
+            _, voice, culture = (ready.split("|") + ["", ""])[:3]
+            if voice and not culture.lower().startswith("zh"):
+                detail += f" · ⚠ 这台电脑没有中文语音（用的是 {voice}），念中文可能听不清"
+            return Status("running", detail)
         return Status("starting", "正在启动……")
 
     def _read_log(self) -> str:

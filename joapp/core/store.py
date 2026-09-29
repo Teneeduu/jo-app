@@ -11,7 +11,7 @@ from datetime import date, datetime
 from pathlib import Path
 
 from ..config import DB_PATH
-from .models import Scope, Todo, period_key
+from .models import REWARD_SCOPES, Reward, Scope, Todo, period_key, reached
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS todos (
@@ -27,6 +27,22 @@ CREATE TABLE IF NOT EXISTS todo_done (
     period   TEXT NOT NULL,
     done_at  TEXT NOT NULL,
     PRIMARY KEY (todo_id, period)
+);
+
+CREATE TABLE IF NOT EXISTS rewards (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    scope       TEXT NOT NULL,
+    percent     INTEGER NOT NULL,
+    text        TEXT NOT NULL,
+    created_at  TEXT NOT NULL
+);
+
+-- 每个奖励每个周期只发一次
+CREATE TABLE IF NOT EXISTS reward_claims (
+    reward_id   INTEGER NOT NULL REFERENCES rewards(id) ON DELETE CASCADE,
+    period      TEXT NOT NULL,
+    claimed_at  TEXT NOT NULL,
+    PRIMARY KEY (reward_id, period)
 );
 
 CREATE TABLE IF NOT EXISTS meta (
@@ -127,6 +143,81 @@ class Store:
             day=_d(r["day"]),
             created_at=_dt(r["created_at"]),
         )
+
+    # ---------- 奖励 ----------
+
+    def add_reward(self, scope: Scope, percent: int, text: str) -> Reward:
+        if scope not in REWARD_SCOPES:
+            raise ValueError(f"{scope.label}任务不能设奖励")
+        reward = Reward(scope=scope, percent=max(1, min(100, int(percent))), text=text.strip())
+        cur = self.conn.execute(
+            "INSERT INTO rewards (scope, percent, text, created_at) VALUES (?,?,?,?)",
+            (scope.value, reward.percent, reward.text, reward.created_at.isoformat()),
+        )
+        self.conn.commit()
+        reward.id = cur.lastrowid
+        return reward
+
+    def delete_reward(self, reward_id: int) -> None:
+        self.conn.execute("DELETE FROM rewards WHERE id = ?", (reward_id,))
+        self.conn.commit()
+
+    def rewards(self, scope: Scope | None = None, today: date | None = None) -> list[Reward]:
+        """按分组、百分比排好；earned 表示这个周期已经拿到了。"""
+        today = today or date.today()
+        sql = "SELECT * FROM rewards"
+        args: tuple = ()
+        if scope is not None:
+            sql += " WHERE scope = ?"
+            args = (scope.value,)
+        order = {s: i for i, s in enumerate(REWARD_SCOPES)}
+        out = []
+        for r in self.conn.execute(sql, args).fetchall():
+            reward = Reward(
+                id=r["id"],
+                scope=Scope(r["scope"]),
+                percent=r["percent"],
+                text=r["text"],
+                created_at=_dt(r["created_at"]),
+            )
+            reward.earned = self._claimed(reward, today)
+            out.append(reward)
+        out.sort(key=lambda w: (order.get(w.scope, 99), w.percent, w.id))
+        return out
+
+    def progress(self, scope: Scope, today: date | None = None) -> tuple[int, int]:
+        """(做完几件, 一共几件)，按当前周期算。"""
+        todos = self.todos(scope, today)
+        return sum(1 for t in todos if t.done), len(todos)
+
+    def claim_reached(self, scope: Scope, today: date | None = None) -> list[Reward]:
+        """这个分组刚够线、这个周期还没发过的奖励：记成已发，返回给界面去庆祝。
+
+        发过的就算后来又取消勾选掉回线下，也不会再发第二次。
+        """
+        today = today or date.today()
+        done, total = self.progress(scope, today)
+        period = period_key(scope, today)
+        fresh = []
+        for reward in self.rewards(scope, today):
+            if reward.earned or not reached(done, total, reward.percent):
+                continue
+            self.conn.execute(
+                "INSERT OR IGNORE INTO reward_claims (reward_id, period, claimed_at)"
+                " VALUES (?,?,?)",
+                (reward.id, period, datetime.now().isoformat()),
+            )
+            reward.earned = True
+            fresh.append(reward)
+        self.conn.commit()
+        return fresh
+
+    def _claimed(self, reward: Reward, today: date) -> bool:
+        row = self.conn.execute(
+            "SELECT 1 FROM reward_claims WHERE reward_id = ? AND period = ?",
+            (reward.id, period_key(reward.scope, today)),
+        ).fetchone()
+        return row is not None
 
     # ---------- 旧版本数据 ----------
 

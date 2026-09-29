@@ -58,3 +58,24 @@ class Todo:
         if self.scope is not Scope.TODAY or self.done:
             return 0
         return max(0, (today - self.day).days)
+
+
+# 能设奖励的分组。当天任务是一次性的、会拖，按比例算没有意义。
+REWARD_SCOPES = (Scope.DAILY, Scope.WEEKLY, Scope.YEARLY)
+
+
+@dataclass
+class Reward:
+    """某个分组在一个周期里完成到 percent% 时，给自己的奖励。"""
+
+    id: int | None = None
+    scope: Scope = Scope.DAILY
+    percent: int = 100
+    text: str = ""
+    created_at: datetime = field(default_factory=datetime.now)
+    earned: bool = False  # 这个周期已经拿到了没（读出来时由 Store 算好）
+
+
+def reached(done: int, total: int, percent: int) -> bool:
+    """done/total ≥ percent%。用整数乘法比，不走浮点 —— 3 件做完 1 件就是 ≥33%。"""
+    return total > 0 and done * 100 >= percent * total

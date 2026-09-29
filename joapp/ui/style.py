@@ -138,6 +138,7 @@ QScrollBar::handle:vertical {{
 QScrollBar::handle:vertical:hover {{ background: {MUTED}; }}
 QScrollBar::add-line, QScrollBar::sub-line,
 QScrollBar::add-page, QScrollBar::sub-page {{ height: 0; background: none; }}
+QLabel#Reward {{ color: #d9a441; font-size: 12px; padding: 2px 0 4px 0; }}
 QLabel#Ok {{ color: #5fb07a; font-size: 12px; }}
 QLabel#Bad {{ color: {ACCENT}; font-size: 12px; }}
 """

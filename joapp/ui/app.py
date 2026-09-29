@@ -6,11 +6,14 @@
 
 from __future__ import annotations
 
+import ctypes
+import hashlib
 import logging
+import os
 import sys
 from datetime import date
 
-from PySide6.QtCore import QObject, QSharedMemory, QTimer
+from PySide6.QtCore import QLibraryInfo, QLocale, QObject, QSharedMemory, QTimer, QTranslator
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtWidgets import QApplication, QSystemTrayIcon
 
@@ -24,8 +27,20 @@ from .window import MainWindow
 
 log = logging.getLogger(__name__)
 
-SINGLE_INSTANCE_KEY = "jo-app-single-instance"
-SHOW_SERVER = "jo-app-show-window"
+def _instance_suffix() -> str:
+    """平时全机一个实例。设了 JOAPP_HOME（开发 / 测试用另一份数据）时按数据目录分开，
+    不然测试版一启动就被正在用的那个挡回去。"""
+    home = os.environ.get("JOAPP_HOME")
+    if not home:
+        return ""
+    return "-" + hashlib.sha1(os.path.abspath(home).lower().encode()).hexdigest()[:8]
+
+
+SINGLE_INSTANCE_KEY = "jo-app-single-instance" + _instance_suffix()
+SHOW_SERVER = "jo-app-show-window" + _instance_suffix()
+# 安装程序（packaging/installer.iss 的 AppMutex）靠这个名字判断 jo-app 还开着没，
+# 开着就先请用户退出再装 / 卸 —— 不然 exe 被占着，覆盖不了。两边的名字要一致。
+INSTALLER_MUTEX = "jo-app-running"
 STATUS_POLL_SECONDS = 5
 
 
@@ -42,6 +57,39 @@ def _claim_single_instance() -> QSharedMemory | None:
     if not lock.create(1):
         return None
     return lock
+
+
+def _hold_installer_mutex():
+    if os.name != "nt":
+        return None
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.CreateMutexW.restype = ctypes.c_void_p
+    return kernel32.CreateMutexW(None, False, INSTALLER_MUTEX)
+
+
+def _setup_logging() -> None:
+    """打包成 exe（无控制台）时 stderr 是 None，日志写进数据目录，别的电脑上出问题有据可查。"""
+    fmt = "%(asctime)s %(levelname)s %(name)s: %(message)s"
+    if sys.stderr is None or getattr(sys, "frozen", False):
+        logging.basicConfig(
+            level=logging.INFO,
+            format=fmt,
+            filename=config.data_dir() / "jo-app.log",
+            filemode="w",  # 每次启动重写，别无限长大
+            encoding="utf-8",
+        )
+    else:
+        logging.basicConfig(level=logging.INFO, format=fmt)
+
+
+def _install_chinese_qt(app: QApplication) -> None:
+    """Qt 自带的按钮（确认框的 Yes / No 之类）换成中文。找不到翻译文件就算了，不影响用。"""
+    translator = QTranslator(app)
+    path = QLibraryInfo.path(QLibraryInfo.TranslationsPath)
+    if translator.load(QLocale(QLocale.Chinese, QLocale.China), "qtbase", "_", path):
+        app.installTranslator(translator)
+    else:
+        log.info("没找到 qtbase 中文翻译（%s），Qt 自带按钮保持英文", path)
 
 
 def _ask_running_instance_to_show() -> None:
@@ -184,9 +232,7 @@ class JoApp(QObject):
 
 
 def run(argv: list[str] | None = None) -> int:
-    logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
-    )
+    _setup_logging()
     app = QApplication(argv if argv is not None else sys.argv)
 
     lock = _claim_single_instance()
@@ -195,8 +241,10 @@ def run(argv: list[str] | None = None) -> int:
         _ask_running_instance_to_show()
         return 0
     app._instance_lock = lock  # 挂在 app 上，别被 GC 掉
+    app._installer_mutex = _hold_installer_mutex()  # 进程退出时系统自动释放
 
     app.setApplicationName(APP_NAME)
+    _install_chinese_qt(app)
     app.setWindowIcon(app_icon())
     app.setStyleSheet(QSS)
     app.setQuitOnLastWindowClosed(False)  # 关窗口不退出，缩回托盘
