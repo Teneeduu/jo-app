@@ -35,15 +35,72 @@ def test_title_is_trimmed(tmp_path):
     assert store.add("  跑步 \n", Scope.DAILY).title == "跑步"
 
 
-def test_daily_done_resets_next_day(tmp_path):
+def test_daily_done_does_not_follow_the_calendar(tmp_path):
+    """每天任务不按日期清零 —— 过了零点还是做完的，等你自己按「重新开始」。"""
     store = make_store(tmp_path)
     todo = store.add("喝水", Scope.DAILY, MON)
     store.set_done(todo, True, MON)
 
-    assert store.todos(Scope.DAILY, MON)[0].done is True
-    tomorrow = store.todos(Scope.DAILY, MON + timedelta(days=1))
-    assert titles(tomorrow) == ["喝水"]  # 还在
-    assert tomorrow[0].done is False  # 但又是没做的
+    later = store.todos(Scope.DAILY, MON + timedelta(days=3))
+    assert titles(later) == ["喝水"]
+    assert later[0].done is True
+
+
+def test_reset_daily_starts_a_new_round(tmp_path):
+    store = make_store(tmp_path)
+    a = store.add("喝水", Scope.DAILY, MON)
+    b = store.add("背单词", Scope.DAILY, MON)
+    w = store.add("打扫", Scope.WEEKLY, MON)
+    t = store.add("交报告", Scope.TODAY, MON)
+    for todo in (a, b, w, t):
+        store.set_done(todo, True, MON)
+    before = store.daily_round_started()
+
+    store.reset_daily()
+
+    assert [x.done for x in store.todos(Scope.DAILY, MON)] == [False, False]
+    assert store.todos(Scope.WEEKLY, MON)[0].done is True  # 只动每天任务
+    assert store.todos(Scope.TODAY, MON)[0].done is True
+    assert store.daily_round_started() >= before
+
+    store.set_done(a, True, MON)  # 新一轮照常勾
+    assert [x.done for x in store.todos(Scope.DAILY, MON)] == [True, False]
+
+
+def test_reset_twice_in_a_row_still_starts_fresh(tmp_path):
+    store = make_store(tmp_path)
+    a = store.add("喝水", Scope.DAILY, MON)
+    store.reset_daily()
+    store.set_done(a, True, MON)
+    store.reset_daily()
+    assert store.todos(Scope.DAILY, MON)[0].done is False
+
+
+def test_round_survives_reopening(tmp_path):
+    path = tmp_path / "test.db"
+    store = Store(path)
+    a = store.add("喝水", Scope.DAILY, MON)
+    store.reset_daily()
+    store.set_done(a, True, MON)
+    store.close()
+
+    assert Store(path).todos(Scope.DAILY, MON)[0].done is True
+
+
+def test_upgrade_keeps_todays_daily_checks(tmp_path):
+    """旧版本按日期记的「今天勾掉了」，升级后第一轮就是今天，所以还算数。"""
+    path = tmp_path / "old.db"
+    store = Store(path)
+    a = store.add("喝水", Scope.DAILY)
+    store.conn.execute(
+        "INSERT INTO todo_done (todo_id, period, done_at) VALUES (?, ?, ?)",
+        (a.id, date.today().isoformat(), "2026-09-29T08:00:00"),
+    )
+    store.conn.execute("DELETE FROM meta WHERE key LIKE 'daily_round%'")
+    store.conn.commit()
+    store.close()
+
+    assert Store(path).todos(Scope.DAILY)[0].done is True
 
 
 def test_weekly_done_lasts_the_iso_week(tmp_path):
@@ -116,6 +173,7 @@ def test_delete_removes_task_and_its_history(tmp_path):
 
 def test_period_keys():
     assert period_key(Scope.DAILY, MON) == "2026-09-21"
+    assert period_key(Scope.DAILY, MON, daily_round="round-x") == "round-x"
     assert period_key(Scope.WEEKLY, MON) == "2026-W39"
     assert period_key(Scope.YEARLY, MON) == "2026"
     assert period_key(Scope.TODAY, MON + timedelta(days=5), MON) == "2026-09-21"

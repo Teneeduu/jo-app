@@ -10,7 +10,8 @@ from enum import Enum
 class Scope(str, Enum):
     """任务按周期分四组。
 
-    每天 / 每周 / 每年是循环的：勾掉只算这一个周期，到下一天 / 周 / 年自动变回没做。
+    每周 / 每年是循环的：勾掉只算这一周 / 年，到下一周 / 年自动变回没做。
+    每天也是循环的，但不看日历 —— 一「轮」从按「重新开始」算起，到下次按为止。
     当天是一次性的：记在哪天就是哪天的事，没做完会一直挂着，直到勾掉或删掉。
     """
 
@@ -32,10 +33,15 @@ _LABELS = {
 }
 
 
-def period_key(scope: Scope, today: date, day: date | None = None) -> str:
-    """完成记录按周期存。同一个周期内勾一次就算做完了。"""
+def period_key(
+    scope: Scope, today: date, day: date | None = None, daily_round: str | None = None
+) -> str:
+    """完成记录按周期存。同一个周期内勾一次就算做完了。
+
+    每天任务的周期是「轮」（Store 记着当前是哪一轮），不传就退回按日期。
+    """
     if scope is Scope.DAILY:
-        return today.isoformat()
+        return daily_round or today.isoformat()
     if scope is Scope.WEEKLY:
         year, week, _ = today.isocalendar()
         return f"{year}-W{week:02d}"

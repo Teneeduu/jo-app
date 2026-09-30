@@ -1,6 +1,7 @@
 """主窗口：一个输入框 + 四个分组（每天 / 当天 / 每周 / 每年），底下是提醒状态。
 
 每天 / 每周 / 每年分组里显示设好的奖励；勾任务勾到够线时弹框发奖励。
+每天任务不按日历清零，「每天」标题旁的「重新开始」按一下才开新一轮。
 
 加任务就是打一行字回车，不估时间、不拆解。分组标题点一下折叠 / 展开。
 关窗口只是缩回托盘 —— 提醒还要接着跑；真退出走「退出」按钮或托盘菜单。
@@ -44,6 +45,7 @@ class _Section(QWidget):
     toggled = Signal(object, bool)  # (Todo, 勾没勾)
     delete_requested = Signal(object)  # Todo
     collapsed_changed = Signal(object, bool)  # (Scope, 折叠没)
+    reset_requested = Signal()  # 只有「每天」分组有
 
     def __init__(self, scope: Scope, collapsed: bool):
         super().__init__()
@@ -58,7 +60,23 @@ class _Section(QWidget):
         self.header.setObjectName("SectionHeader")
         self.header.setCursor(Qt.PointingHandCursor)
         self.header.clicked.connect(self._flip)
-        layout.addWidget(self.header)
+        self.round_label: QLabel | None = None
+        if scope is Scope.DAILY:
+            top = QHBoxLayout()
+            top.setSpacing(6)
+            top.addWidget(self.header, 1)
+            self.round_label = QLabel("")
+            self.round_label.setObjectName("Muted")
+            top.addWidget(self.round_label)
+            reset = QPushButton("↻ 重新开始")
+            reset.setObjectName("Reset")
+            reset.setCursor(Qt.PointingHandCursor)
+            reset.setToolTip("每天任务全部变回没做，每天的奖励可以重新拿")
+            reset.clicked.connect(self.reset_requested.emit)
+            top.addWidget(reset)
+            layout.addLayout(top)
+        else:
+            layout.addWidget(self.header)
 
         self.body = QWidget()
         body = QVBoxLayout(self.body)
@@ -94,6 +112,13 @@ class _Section(QWidget):
         for todo in todos:
             self._rows.addWidget(self._row(todo, today))
         self._update_header()
+
+    def set_round_started(self, started) -> None:
+        if self.round_label is not None and started is not None:
+            self.round_label.setText(
+                f"{started.month}/{started.day} {started:%H:%M} 起"
+            )
+            self.round_label.setToolTip(f"这一轮从 {started:%Y-%m-%d %H:%M} 开始")
 
     def set_rewards(self, rewards: list[Reward]) -> None:
         """「🎁 50% 看一集剧 ✓ · 100% 吃顿好的」—— 拿到的标绿打勾。"""
@@ -243,6 +268,7 @@ class MainWindow(QWidget):
             section.toggled.connect(self._toggle)
             section.delete_requested.connect(self._delete)
             section.collapsed_changed.connect(self._emit_collapsed)
+            section.reset_requested.connect(self._reset_daily)
             body.addWidget(section)
             self.sections[scope] = section
         scroll.setWidget(host)
@@ -306,6 +332,7 @@ class MainWindow(QWidget):
             section.set_todos(self.store.todos(scope, today), today)
             if scope in REWARD_SCOPES:
                 section.set_rewards(self.store.rewards(scope, today))
+        self.sections[Scope.DAILY].set_round_started(self.store.daily_round_started())
 
     def _current_scope(self) -> Scope:
         return ORDER[max(0, self._scope_group.checkedId())]
@@ -326,6 +353,22 @@ class MainWindow(QWidget):
         self.refresh()
         if checked and todo.scope in REWARD_SCOPES:
             self._celebrate(todo.scope)
+
+    def _reset_daily(self) -> None:
+        done, total = self.store.progress(Scope.DAILY)
+        answer = QMessageBox.question(
+            self,
+            "重新开始",
+            f"开始新一轮每天任务？\n\n"
+            f"这一轮做完了 {done}/{total} 件。重新开始后：\n"
+            f"· 每天任务全部变回没做\n"
+            f"· 每天的奖励可以重新拿\n\n"
+            f"当天 / 每周 / 每年的不受影响。",
+        )
+        if answer == QMessageBox.Yes:
+            self.store.reset_daily()
+            self.expand(Scope.DAILY)
+            self.refresh()
 
     # ---------- 奖励 ----------
 

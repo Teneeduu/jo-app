@@ -111,6 +111,10 @@ QPushButton#Scope:checked {{
     color: #ffffff;
     font-weight: 600;
 }}
+QPushButton#Reset {{
+    padding: 3px 10px;
+    font-size: 12px;
+}}
 QToolButton#Delete {{
     background: transparent;
     border: none;

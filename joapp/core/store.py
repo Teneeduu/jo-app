@@ -1,7 +1,11 @@
 """SQLite 持久化层。没有 ORM，手写 SQL，够用且零依赖。
 
 任务一张表，完成记录一张表。完成记录按「周期」存（见 models.period_key），
-所以每天任务到第二天自动变回没做，不需要任何定时清零。
+换周期时什么都不用删，读的时候换个 key 就自然变回没做。
+
+每天任务的周期不看日历，是「轮」：meta 表里记着当前这一轮的 key，
+按「重新开始」（reset_daily）就换一个新 key —— 每天任务全变回没做，
+每天的奖励也能重新拿。旧一轮的记录原样留着。
 """
 
 from __future__ import annotations
@@ -69,10 +73,55 @@ class Store:
         self.conn.execute("PRAGMA foreign_keys = ON")
         self.conn.executescript(SCHEMA)
         self._import_legacy_tasks()
+        self._daily_round = self._load_daily_round()
         self.conn.commit()
 
     def close(self) -> None:
         self.conn.close()
+
+    # ---------- 每天任务的「轮」 ----------
+
+    def _load_daily_round(self) -> str:
+        row = self.conn.execute("SELECT value FROM meta WHERE key = 'daily_round'").fetchone()
+        if row:
+            return row["value"]
+        # 第一次（包括从按日期清零的旧版本升上来）：第一轮就是「今天」，
+        # 这样今天已经勾掉的每天任务、已经拿到的每天奖励都还算数。
+        first = date.today().isoformat()
+        self._set_meta("daily_round", first)
+        self._set_meta("daily_round_started", datetime.now().isoformat())
+        return first
+
+    def reset_daily(self) -> None:
+        """重新开始一轮：每天任务全部变回没做，每天的奖励可以重新拿。"""
+        # key 用递增编号，不用时间戳 —— Windows 时钟精度有限，连按两下可能拿到同一个时间，
+        # 第二下就等于没按。时间另存一份只给界面显示。
+        row = self.conn.execute(
+            "SELECT value FROM meta WHERE key = 'daily_round_count'"
+        ).fetchone()
+        count = int(row["value"]) + 1 if row else 1
+        now = datetime.now()
+        self._daily_round = f"round-{count}"
+        self._set_meta("daily_round_count", str(count))
+        self._set_meta("daily_round", self._daily_round)
+        self._set_meta("daily_round_started", now.isoformat())
+        self.conn.commit()
+
+    def daily_round_started(self) -> datetime | None:
+        row = self.conn.execute(
+            "SELECT value FROM meta WHERE key = 'daily_round_started'"
+        ).fetchone()
+        return _dt(row["value"]) if row else None
+
+    def _set_meta(self, key: str, value: str) -> None:
+        self.conn.execute(
+            "INSERT INTO meta (key, value) VALUES (?, ?)"
+            " ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (key, value),
+        )
+
+    def _period(self, scope: Scope, today: date, day: date | None = None) -> str:
+        return period_key(scope, today, day, daily_round=self._daily_round)
 
     # ---------- 增删改 ----------
 
@@ -91,7 +140,7 @@ class Store:
         self.conn.commit()
 
     def set_done(self, todo: Todo, done: bool, today: date | None = None) -> None:
-        period = period_key(todo.scope, today or date.today(), todo.day)
+        period = self._period(todo.scope, today or date.today(), todo.day)
         if done:
             self.conn.execute(
                 "INSERT OR IGNORE INTO todo_done (todo_id, period, done_at)"
@@ -131,7 +180,7 @@ class Store:
     def _is_done(self, todo: Todo, today: date) -> bool:
         row = self.conn.execute(
             "SELECT 1 FROM todo_done WHERE todo_id = ? AND period = ?",
-            (todo.id, period_key(todo.scope, today, todo.day)),
+            (todo.id, self._period(todo.scope, today, todo.day)),
         ).fetchone()
         return row is not None
 
@@ -197,7 +246,7 @@ class Store:
         """
         today = today or date.today()
         done, total = self.progress(scope, today)
-        period = period_key(scope, today)
+        period = self._period(scope, today)
         fresh = []
         for reward in self.rewards(scope, today):
             if reward.earned or not reached(done, total, reward.percent):
@@ -215,7 +264,7 @@ class Store:
     def _claimed(self, reward: Reward, today: date) -> bool:
         row = self.conn.execute(
             "SELECT 1 FROM reward_claims WHERE reward_id = ? AND period = ?",
-            (reward.id, period_key(reward.scope, today)),
+            (reward.id, self._period(reward.scope, today)),
         ).fetchone()
         return row is not None
 

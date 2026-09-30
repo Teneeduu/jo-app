@@ -2,6 +2,7 @@
 
 规则很简单：每天 / 每周 / 每年任务在一个周期里完成到 N% 就发一个奖励，
 每个奖励每个周期只发一次。N 自己定，50% / 100% 只是快捷按钮。
+「每天」的周期是一轮 —— 从按「重新开始」到下一次按。
 """
 
 from __future__ import annotations
@@ -42,7 +43,7 @@ class RewardsDialog(QDialog):
         title = QLabel("完成到多少，奖励自己什么")
         title.setObjectName("Title")
         root.addWidget(title)
-        hint = QLabel("每个奖励每个周期只发一次：每天的第二天重来，每周的下周一重来，每年的明年重来。")
+        hint = QLabel("每个奖励每个周期只发一次：每天的按「重新开始」后重来，每周的下周一重来，每年的明年重来。")
         hint.setObjectName("Subtitle")
         hint.setWordWrap(True)
         root.addWidget(hint)

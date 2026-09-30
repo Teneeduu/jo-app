@@ -86,8 +86,13 @@ def test_rewards_reset_each_period(tmp_path):
     store.claim_reached(Scope.WEEKLY, MON)
 
     tue = MON + timedelta(days=1)
-    assert store.rewards(Scope.DAILY, tue)[0].earned is False  # 新的一天
+    assert store.rewards(Scope.DAILY, tue)[0].earned is True  # 过了零点不算新一轮
     assert store.rewards(Scope.WEEKLY, tue)[0].earned is True  # 还是这周
+
+    store.reset_daily()  # 按了「重新开始」
+    assert store.rewards(Scope.DAILY, tue)[0].earned is False
+    assert store.rewards(Scope.WEEKLY, tue)[0].earned is True  # 每周的不受影响
+    assert store.claim_reached(Scope.DAILY, tue) == []  # 任务也清了，还没够线
     store.set_done(d, True, tue)
     assert texts(store.claim_reached(Scope.DAILY, tue)) == ["日奖"]
 
