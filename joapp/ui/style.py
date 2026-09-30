@@ -25,6 +25,10 @@ QWidget {{
     border: 1px solid {BORDER};
     border-radius: 12px;
 }}
+/* 卡片里的东西透明，露出卡片底色（全局 QWidget 背景会让每个 QLabel 带一块深色底） */
+#Card QLabel, #Card QScrollArea, #Card QScrollArea > QWidget > QWidget {{
+    background: transparent;
+}}
 #Title {{
     font-size: 20px;
     font-weight: 600;
@@ -140,6 +144,17 @@ QScrollBar::handle:vertical {{
     min-height: 32px;
 }}
 QScrollBar::handle:vertical:hover {{ background: {MUTED}; }}
+QScrollBar:horizontal {{
+    background: transparent;
+    height: 8px;
+    margin: 0;
+}}
+QScrollBar::handle:horizontal {{
+    background: {BORDER};
+    border-radius: 4px;
+    min-width: 32px;
+}}
+QScrollBar::handle:horizontal:hover {{ background: {MUTED}; }}
 QScrollBar::add-line, QScrollBar::sub-line,
 QScrollBar::add-page, QScrollBar::sub-page {{ height: 0; background: none; }}
 QLabel#Reward {{ color: #d9a441; font-size: 12px; padding: 2px 0 4px 0; }}

@@ -21,6 +21,7 @@ from .. import APP_NAME, config
 from ..core.models import Scope
 from ..core.store import Store
 from ..reminder import Reminder
+from .activity import ActivityWindow
 from .style import QSS, app_icon
 from .tray import Tray
 from .window import MainWindow
@@ -116,6 +117,7 @@ class JoApp(QObject):
 
         self.tray = Tray(self)
         self.tray.open_requested.connect(self.open_window)
+        self.tray.activity_requested.connect(self.open_activity)
         self.tray.test_requested.connect(self.test_reminder)
         self.tray.toggle_reminder.connect(
             lambda: self.set_reminder_enabled(not self.cfg.remind_enabled)
@@ -134,6 +136,9 @@ class JoApp(QObject):
         self.window.reminder_enabled_changed.connect(self.set_reminder_enabled)
         self.window.reminder_minutes_changed.connect(self.set_reminder_minutes)
         self.window.collapsed_changed.connect(self._save_collapsed)
+        self.window.activity_requested.connect(self.open_activity)
+        self.window.changed.connect(self._refresh_activity)
+        self._activity: ActivityWindow | None = None
 
         # 每天任务每次打开都得看见 —— 上次折叠了也展开
         self.window.expand(Scope.DAILY)
@@ -149,6 +154,8 @@ class JoApp(QObject):
         self.timer.start(STATUS_POLL_SECONDS * 1000)
 
         app.aboutToQuit.connect(self.reminder.stop)  # 不管从哪条路退出都收干净
+        # 关机 / 注销时 Windows 会来问能不能关：放行，别让缩回托盘的逻辑挡着
+        app.commitDataRequest.connect(self._allow_close)
 
         QLocalServer.removeServer(SHOW_SERVER)  # 上次崩溃留下的同名管道
         self._show_server = QLocalServer(self)
@@ -163,6 +170,7 @@ class JoApp(QObject):
         if date.today() != self._day:
             self._day = date.today()
             self.window.refresh()
+            self._refresh_activity()
 
         status = self.reminder.status()
         self.window.set_reminder_status(status)
@@ -205,6 +213,15 @@ class JoApp(QObject):
     def open_window(self) -> None:
         self.window.bring_up()
 
+    def open_activity(self) -> None:
+        if self._activity is None:
+            self._activity = ActivityWindow(self.store)
+        self._activity.bring_up()
+
+    def _refresh_activity(self) -> None:
+        if self._activity is not None and self._activity.isVisible():
+            self._activity.refresh()
+
     def _on_show_request(self) -> None:
         while self._show_server.hasPendingConnections():
             self._show_server.nextPendingConnection().deleteLater()
@@ -222,13 +239,22 @@ class JoApp(QObject):
         self.cfg.collapsed = collapsed
         config.save(self.cfg)
 
+    def _allow_close(self, *_) -> None:
+        self.window.allow_close = True
+
     def quit(self) -> None:
+        self._allow_close()
         self.timer.stop()
         self._show_server.close()
         self.reminder.stop()
         self.tray.hide()
+        if self._activity is not None:
+            self._activity.close()
+        self.window.close()
         self.store.close()
-        self.app.quit()
+        # exit() 而不是 quit()：Qt 6 的 quit() 只是「请求」，会先挨个问窗口能不能关，
+        # 有一个不同意就作罢。这里已经收拾完了，直接结束事件循环。
+        self.app.exit(0)
 
 
 def run(argv: list[str] | None = None) -> int:

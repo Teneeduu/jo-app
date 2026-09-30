@@ -85,3 +85,13 @@ class Reward:
 def reached(done: int, total: int, percent: int) -> bool:
     """done/total ≥ percent%。用整数乘法比，不走浮点 —— 3 件做完 1 件就是 ≥33%。"""
     return total > 0 and done * 100 >= percent * total
+
+
+@dataclass
+class Activity:
+    """活动记录里的一条：做完了一件事，或者拿到了一个奖励。"""
+
+    kind: str  # task | reward
+    title: str
+    scope: Scope | None  # 最早那版导进来的旧任务没有分组
+    at: datetime

@@ -6,16 +6,20 @@
 每天任务的周期不看日历，是「轮」：meta 表里记着当前这一轮的 key，
 按「重新开始」（reset_daily）就换一个新 key —— 每天任务全变回没做，
 每天的奖励也能重新拿。旧一轮的记录原样留着。
+
+活动记录（activity）单独一张表，只追加：勾掉一件事、拿到一个奖励各记一条，
+标题当场抄一份。删任务、删奖励都不动它 —— 历史是历史。
+取消勾选是例外：那说明刚才是点错了，对应的那条一起撤掉。
 """
 
 from __future__ import annotations
 
 import sqlite3
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from ..config import DB_PATH
-from .models import REWARD_SCOPES, Reward, Scope, Todo, period_key, reached
+from .models import REWARD_SCOPES, Activity, Reward, Scope, Todo, period_key, reached
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS todos (
@@ -49,6 +53,18 @@ CREATE TABLE IF NOT EXISTS reward_claims (
     PRIMARY KEY (reward_id, period)
 );
 
+-- 活动记录：只追加。ref_id 指向任务 / 奖励，但不设外键 —— 删了也留着
+CREATE TABLE IF NOT EXISTS activity (
+    id      INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind    TEXT NOT NULL,
+    ref_id  INTEGER,
+    period  TEXT,
+    title   TEXT NOT NULL,
+    scope   TEXT,
+    at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_activity_at ON activity(at);
+
 CREATE TABLE IF NOT EXISTS meta (
     key    TEXT PRIMARY KEY,
     value  TEXT NOT NULL
@@ -73,6 +89,7 @@ class Store:
         self.conn.execute("PRAGMA foreign_keys = ON")
         self.conn.executescript(SCHEMA)
         self._import_legacy_tasks()
+        self._backfill_activity()
         self._daily_round = self._load_daily_round()
         self.conn.commit()
 
@@ -139,19 +156,34 @@ class Store:
         self.conn.execute("DELETE FROM todos WHERE id = ?", (todo_id,))
         self.conn.commit()
 
-    def set_done(self, todo: Todo, done: bool, today: date | None = None) -> None:
+    def set_done(
+        self,
+        todo: Todo,
+        done: bool,
+        today: date | None = None,
+        at: datetime | None = None,
+    ) -> None:
+        """at：什么时候做完的，默认现在（测试里用来造历史）。"""
         period = self._period(todo.scope, today or date.today(), todo.day)
         if done:
-            self.conn.execute(
+            stamp = (at or datetime.now()).isoformat()
+            cur = self.conn.execute(
                 "INSERT OR IGNORE INTO todo_done (todo_id, period, done_at)"
                 " VALUES (?,?,?)",
-                (todo.id, period, datetime.now().isoformat()),
+                (todo.id, period, stamp),
             )
+            if cur.rowcount:  # 重复勾不重复记
+                self._log("task", todo.id, period, todo.title, todo.scope, stamp)
         else:
-            self.conn.execute(
+            cur = self.conn.execute(
                 "DELETE FROM todo_done WHERE todo_id = ? AND period = ?",
                 (todo.id, period),
             )
+            if cur.rowcount:
+                self.conn.execute(
+                    "DELETE FROM activity WHERE kind = 'task' AND ref_id = ? AND period = ?",
+                    (todo.id, period),
+                )
         self.conn.commit()
         todo.done = done
 
@@ -251,11 +283,14 @@ class Store:
         for reward in self.rewards(scope, today):
             if reward.earned or not reached(done, total, reward.percent):
                 continue
-            self.conn.execute(
+            stamp = datetime.now().isoformat()
+            cur = self.conn.execute(
                 "INSERT OR IGNORE INTO reward_claims (reward_id, period, claimed_at)"
                 " VALUES (?,?,?)",
-                (reward.id, period, datetime.now().isoformat()),
+                (reward.id, period, stamp),
             )
+            if cur.rowcount:
+                self._log("reward", reward.id, period, reward.text, reward.scope, stamp)
             reward.earned = True
             fresh.append(reward)
         self.conn.commit()
@@ -267,6 +302,84 @@ class Store:
             (reward.id, self._period(reward.scope, today)),
         ).fetchone()
         return row is not None
+
+    # ---------- 活动记录 ----------
+
+    def _log(self, kind, ref_id, period, title, scope, at: str) -> None:
+        self.conn.execute(
+            "INSERT INTO activity (kind, ref_id, period, title, scope, at)"
+            " VALUES (?,?,?,?,?,?)",
+            (kind, ref_id, period, title, scope.value if scope else None, at),
+        )
+
+    def activity_counts(self, start: date, end: date) -> dict[date, int]:
+        """[start, end] 里每天做完几件事（只数任务，不数奖励）。"""
+        rows = self.conn.execute(
+            "SELECT substr(at, 1, 10) AS d, COUNT(*) AS n FROM activity"
+            " WHERE kind = 'task' AND at >= ? AND at < ? GROUP BY d",
+            (start.isoformat(), (end + timedelta(days=1)).isoformat()),
+        ).fetchall()
+        return {date.fromisoformat(r["d"]): r["n"] for r in rows}
+
+    def activity_days(self) -> set[date]:
+        """所有做过事的日子，算连续天数用。"""
+        rows = self.conn.execute(
+            "SELECT DISTINCT substr(at, 1, 10) AS d FROM activity WHERE kind = 'task'"
+        ).fetchall()
+        return {date.fromisoformat(r["d"]) for r in rows}
+
+    def activity_on(self, day: date) -> list[Activity]:
+        rows = self.conn.execute(
+            "SELECT * FROM activity WHERE at >= ? AND at < ? ORDER BY at, id",
+            (day.isoformat(), (day + timedelta(days=1)).isoformat()),
+        ).fetchall()
+        return [
+            Activity(
+                kind=r["kind"],
+                title=r["title"],
+                scope=Scope(r["scope"]) if r["scope"] else None,
+                at=_dt(r["at"]),
+            )
+            for r in rows
+        ]
+
+    def activity_years(self, today: date | None = None) -> list[int]:
+        """有记录的年份（新的在前），今年总在里面。"""
+        today = today or date.today()
+        rows = self.conn.execute(
+            "SELECT DISTINCT substr(at, 1, 4) AS y FROM activity"
+        ).fetchall()
+        years = {int(r["y"]) for r in rows} | {today.year}
+        return sorted(years, reverse=True)
+
+    def _backfill_activity(self) -> None:
+        """活动记录是 0.5 才有的。之前的完成记录、奖励、最早那版做完的任务，补一次进来。"""
+        if self.conn.execute(
+            "SELECT 1 FROM meta WHERE key = 'activity_backfilled'"
+        ).fetchone():
+            return
+        self.conn.execute(
+            "INSERT INTO activity (kind, ref_id, period, title, scope, at)"
+            " SELECT 'task', d.todo_id, d.period, t.title, t.scope, d.done_at"
+            " FROM todo_done d JOIN todos t ON t.id = d.todo_id"
+        )
+        self.conn.execute(
+            "INSERT INTO activity (kind, ref_id, period, title, scope, at)"
+            " SELECT 'reward', c.reward_id, c.period, r.text, r.scope, c.claimed_at"
+            " FROM reward_claims c JOIN rewards r ON r.id = c.reward_id"
+        )
+        has_legacy = self.conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'tasks'"
+        ).fetchone()
+        if has_legacy:
+            columns = {r["name"] for r in self.conn.execute("PRAGMA table_info(tasks)")}
+            if {"title", "status", "done_at"} <= columns:
+                self.conn.execute(
+                    "INSERT INTO activity (kind, ref_id, period, title, scope, at)"
+                    " SELECT 'task', NULL, NULL, title, NULL, done_at FROM tasks"
+                    " WHERE status = 'done' AND done_at IS NOT NULL"
+                )
+        self._set_meta("activity_backfilled", datetime.now().isoformat())
 
     # ---------- 旧版本数据 ----------
 

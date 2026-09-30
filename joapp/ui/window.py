@@ -204,6 +204,8 @@ class MainWindow(QWidget):
     reminder_enabled_changed = Signal(bool)
     reminder_minutes_changed = Signal(int)
     collapsed_changed = Signal(list)  # 当前折叠着的 scope 值列表
+    activity_requested = Signal()
+    changed = Signal()  # 勾 / 取消 / 删 / 重新开始之后，活动记录窗口要跟着刷新
 
     def __init__(self, store: Store, collapsed: list[str], minutes: int, enabled: bool):
         super().__init__()
@@ -306,6 +308,10 @@ class MainWindow(QWidget):
         self.status = QLabel("")
         self.status.setWordWrap(True)
         bottom.addWidget(self.status, 1)
+        activity_btn = QPushButton("📅 记录")
+        activity_btn.setToolTip("活动记录：像 GitHub 那样看每天做了哪些事")
+        activity_btn.clicked.connect(self.activity_requested.emit)
+        bottom.addWidget(activity_btn)
         rewards_btn = QPushButton("🎁 奖励")
         rewards_btn.setToolTip("给每天 / 每周 / 每年的完成度设奖励")
         rewards_btn.clicked.connect(self.open_rewards)
@@ -351,6 +357,7 @@ class MainWindow(QWidget):
     def _toggle(self, todo: Todo, checked: bool) -> None:
         self.store.set_done(todo, checked)
         self.refresh()
+        self.changed.emit()
         if checked and todo.scope in REWARD_SCOPES:
             self._celebrate(todo.scope)
 
@@ -369,6 +376,7 @@ class MainWindow(QWidget):
             self.store.reset_daily()
             self.expand(Scope.DAILY)
             self.refresh()
+            self.changed.emit()
 
     # ---------- 奖励 ----------
 
@@ -384,6 +392,7 @@ class MainWindow(QWidget):
         if not earned:
             return
         self.refresh()  # 分组里的奖励要标成已拿到
+        self.changed.emit()  # 奖励也记进活动记录
         EarnedDialog(earned, {scope: self.store.progress(scope)}, self).exec()
 
     def _delete(self, todo: Todo) -> None:
@@ -394,6 +403,7 @@ class MainWindow(QWidget):
         if answer == QMessageBox.Yes:
             self.store.delete(todo.id)
             self.refresh()
+            self.changed.emit()
 
     def _emit_collapsed(self, *_):
         self.collapsed_changed.emit(
@@ -425,8 +435,15 @@ class MainWindow(QWidget):
 
     # ---------- 窗口 ----------
 
+    # 真要退出（「退出」按钮、托盘、关机注销）时由 JoApp 打开，放行关窗口。
+    # 不放行的话 Qt 6 的 quit() 会被这个窗口否决 —— 点了「退出」却时灵时不灵。
+    allow_close = False
+
     def closeEvent(self, event):
         """关窗口 = 缩回托盘。提醒还要接着跑。"""
+        if self.allow_close:
+            event.accept()
+            return
         event.ignore()
         self.hide()
         self.hidden_to_tray.emit()

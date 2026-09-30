@@ -10,6 +10,7 @@ from .style import app_icon
 
 class Tray(QObject):
     open_requested = Signal()
+    activity_requested = Signal()
     test_requested = Signal()
     toggle_reminder = Signal()
     quit_requested = Signal()
@@ -21,6 +22,7 @@ class Tray(QObject):
 
         menu = QMenu()
         menu.addAction("打开清单", self.open_requested.emit)
+        menu.addAction("活动记录", self.activity_requested.emit)
         menu.addSeparator()
         menu.addAction("试一下提醒", self.test_requested.emit)
         self.remind_action = menu.addAction("暂停提醒", self.toggle_reminder.emit)

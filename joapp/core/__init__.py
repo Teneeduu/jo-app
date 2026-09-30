@@ -1,4 +1,13 @@
-from .models import REWARD_SCOPES, Reward, Scope, Todo, period_key, reached
+from .models import REWARD_SCOPES, Activity, Reward, Scope, Todo, period_key, reached
 from .store import Store
 
-__all__ = ["REWARD_SCOPES", "Reward", "Scope", "Todo", "period_key", "reached", "Store"]
+__all__ = [
+    "REWARD_SCOPES",
+    "Activity",
+    "Reward",
+    "Scope",
+    "Todo",
+    "period_key",
+    "reached",
+    "Store",
+]
