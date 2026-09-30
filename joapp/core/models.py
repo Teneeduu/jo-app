@@ -6,6 +6,8 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from enum import Enum
 
+from ..i18n import t
+
 
 class Scope(str, Enum):
     """任务按周期分四组。
@@ -22,7 +24,7 @@ class Scope(str, Enum):
 
     @property
     def label(self) -> str:
-        return _LABELS[self]
+        return t(_LABELS[self])
 
 
 _LABELS = {

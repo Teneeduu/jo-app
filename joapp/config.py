@@ -31,8 +31,12 @@ class Config:
     # 定时提醒：开应用就在后台跑，退出应用一起关
     remind_enabled: bool = True
     remind_minutes: int = 60
+    # 念的话 / 弹窗文字。保持默认值时跟着界面语言换成对应语言的默认值（见 i18n.reminder_text）
     remind_voice: str = "喝水时间到了，顺便起来活动一下吧"  # 空串 = 不念
     remind_popup: str = "休息下吧"  # 空串 = 不弹窗
+
+    # 界面语言：auto（跟系统）/ zh / en
+    language: str = "auto"
 
     # 界面：折叠起来的分组（"daily" / "today" / "weekly" / "yearly"）。
     # 「每天」不管存的是什么，每次启动都会展开。

@@ -72,13 +72,18 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $notes = @(
+            '## Install'
+            ''
+            'Download **jo-app-setup.exe** below and run it. No admin rights and no Python needed.'
+            ''
+            '- Windows SmartScreen may say "Windows protected your PC" (the installer is not code-signed): click **More info** → **Run anyway**.'
+            '- You can tick **Start with Windows** during setup.'
+            '- Upgrading: just install the new version over the old one. Your tasks and rewards stay (data lives in `%APPDATA%\jo-app`).'
+            ''
             '## 下载安装'
             ''
-            '下载下面的 **jo-app-setup.exe**，双击安装。不需要管理员权限，也不需要装 Python。'
-            ''
-            '- Windows 可能弹「Windows 已保护你的电脑」（安装程序没有买代码签名）：点「更多信息」→「仍要运行」。'
-            '- 装的时候可以勾「开机自动启动」。'
-            '- 升级：直接装新版覆盖，任务和奖励都在（数据在 %APPDATA%\jo-app）。'
+            '下载 **jo-app-setup.exe** 双击安装，不需要管理员权限，也不需要装 Python。界面支持中文 / English 切换。'
+            'Windows 提示「已保护你的电脑」时点「更多信息」→「仍要运行」。升级直接覆盖安装，数据都在。'
           ) -join "`n"
           gh release create "${{ github.ref_name }}" dist/jo-app-setup.exe `
             --title "jo-app ${{ github.ref_name }}" --notes $notes

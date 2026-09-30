@@ -1,167 +1,195 @@
 # jo-app
 
+**English** | [简体中文](README.zh-CN.md)
+
 > if you joke yourself, you are joker of course.
 
-一个常驻 Windows 托盘的任务清单 + 定时休息提醒。
+A Windows tray app for your to-do list, with timed break reminders.
 
-- **纯离线**：没有云端、没有账号、不联网。数据全在本地一个 SQLite 文件里。
-- **加任务就是打一行字**：不估时间、不拆解，回车记下。
-- **四个分组一个窗口**：每天 / 当天 / 每周 / 每年，都摆在一起，每组可以折叠。
-- **定时提醒**：打开应用就在后台每小时念一句「喝水时间到了，顺便起来活动一下吧」，
-  同时弹一个「休息下吧」的框。退出应用，提醒一起关。
-- **给自己发奖励**：每天 / 每周 / 每年的任务完成到 50%、100% 或者任意百分比，
-  奖励自己一下 —— 奖励自己定，够线时弹出来。
-- **活动记录**：跟 GitHub 贡献图一样的格子，一格一天，越绿那天做完的事越多；
-  点某一天看那天具体做了什么、拿到了什么奖励。
+- **Fully offline.** No cloud, no account, no network. Everything lives in one local SQLite file.
+- **Adding a task is typing one line.** No time estimates, no breakdowns. Type it and press Enter.
+- **Four groups in one window:** Daily / Today / Weekly / Yearly, all side by side, each collapsible.
+- **Timed reminders.** While the app is open, a background process speaks
+  "Time for some water. Get up and move around a bit." every hour and pops up a
+  "Take a break." box. Quit the app and the reminder stops with it.
+- **Rewards.** When your daily / weekly / yearly tasks reach 50%, 100% or any percentage you like,
+  reward yourself. You define the reward, and it pops up the moment you cross the line.
+- **Activity graph.** A GitHub-style contribution graph: one square per day, greener means more done.
+  Click a day to see exactly what you finished and which rewards you earned.
+- **中文 / English.** Switch with one click in the top-right corner. It takes effect immediately,
+  including the reminder's text, popup and voice.
 
-## 下载安装（别的电脑上用）
+## Download and install
 
-**直接下载：[jo-app-setup.exe](https://github.com/Teneeduu/jo-app/releases/latest/download/jo-app-setup.exe)**
-（总是最新版；历史版本在 [Releases](https://github.com/Teneeduu/jo-app/releases)）
+**Direct download: [jo-app-setup.exe](https://github.com/Teneeduu/jo-app/releases/latest/download/jo-app-setup.exe)**
+(always the latest version; older ones are under [Releases](https://github.com/Teneeduu/jo-app/releases))
 
-双击安装，**不需要管理员权限，也不需要装 Python**。装在
-`%LOCALAPPDATA%\Programs\jo-app`，安装时可以勾「桌面快捷方式」和「开机自动启动」。
+Run it. **No admin rights and no Python needed.** It installs to
+`%LOCALAPPDATA%\Programs\jo-app`. During setup you can choose a desktop shortcut and **Start with Windows**.
 
-- Windows 可能弹「Windows 已保护你的电脑」—— 安装程序没有买代码签名证书。
-  点「更多信息」→「仍要运行」。
-- **升级**：直接装新版覆盖。任务、奖励、设置都在 `%APPDATA%\jo-app`，不受影响。
-  jo-app 开着的话安装程序会让你先退出它（托盘右键 →「退出」）。
-- **卸载**：「设置 → 应用」里找 jo-app。数据目录 `%APPDATA%\jo-app` 会留着，
-  想彻底清掉就手动删。
-- 定时提醒用的是 Windows 自带的语音。那台电脑如果没装中文语音，窗口底部会提示
-  「这台电脑没有中文语音」—— 去「设置 → 时间和语言 → 语音」里添加中文语音就行。
+- Windows SmartScreen may say "Windows protected your PC" because the installer isn't code-signed.
+  Click **More info** → **Run anyway**.
+- **Upgrading:** install the new version over the old one. Tasks, rewards and settings live in
+  `%APPDATA%\jo-app` and are kept. If jo-app is running, the installer asks you to quit it first
+  (right-click the tray icon → Quit).
+- **Uninstalling:** Settings → Apps → jo-app. The data folder `%APPDATA%\jo-app` is left in place;
+  delete it by hand if you want a clean slate.
+- Reminders use the voices built into Windows. If the PC has no voice for your language, the
+  bottom of the window says so. Add one under Settings → Time & Language → Speech.
 
 ---
 
-## 它长什么样
+## What it looks like
 
 ```
 ┌──────────────────────────────────────────┐
-│ jo-app                9月24日 周四 · 第39周 │
+│ jo-app        Tue, Sep 29 · Week 40 [中文] │
 │ ┌──────────────────────────────────────┐ │
-│ │ 加个任务，回车记下                    │ │
+│ │ Add a task, press Enter              │ │
 │ └──────────────────────────────────────┘ │
-│ [每天] [当天] [每周] [每年]         [添加] │
+│ [Daily] [Today] [Weekly] [Yearly]   [Add] │
 │                                          │
-│ ▾ 每天   1/3 · 33%     9/29 08:00 起 [↻ 重新开始] │
-│   🎁 50% 看一集剧 · 100% 吃顿好的          │
-│   ☑ 喝够 8 杯水                        ×  │
-│   ☐ 背 20 个单词                       ×  │
-│   ☐ 晚上拉伸 10 分钟                   ×  │
-│ ▾ 当天   0/2                              │
-│   ☐ 交季度报告           拖了 2 天     ×  │
-│   ☐ 给妈妈打电话                       ×  │
-│ ▾ 每周   0/1                              │
-│   ☐ 打扫房间                           ×  │
-│ ▸ 每年   0/1              ← 点标题折叠/展开 │
+│ ▾ Daily  1/3 · 33%  since 9/29 08:00 [↻ New round] │
+│   🎁 50% Watch an episode · 100% Nice dinner │
+│   ☑ Drink 8 glasses of water           ×  │
+│   ☐ Learn 20 words                     ×  │
+│   ☐ Stretch before bed                 ×  │
+│ ▾ Today  0/2                              │
+│   ☐ Send the quarterly report  2d overdue × │
+│   ☐ Call mom                           ×  │
+│ ▾ Weekly  0/1                             │
+│   ☐ Clean the room                     ×  │
+│ ▸ Yearly  0/1           ← click to fold   │
 │──────────────────────────────────────────│
-│ 提醒：每 [60 分钟]           [试一下] [暂停] │
-│ ● 提醒在后台运行    [📅 记录] [🎁 奖励] [退出] │
+│ Remind every [60 min]       [Try it] [Pause] │
+│ ● Reminder running  [📅 Activity] [🎁 Rewards] [Quit] │
 └──────────────────────────────────────────┘
 ```
 
-## 四个分组
+## The four groups
 
-| 分组 | 是什么 | 勾掉之后 |
+| Group | What it is | Once checked |
 |---|---|---|
-| **每天** | 每天都要做的事 | **不按日历清零**，一直算做完，直到你按「↻ 重新开始」开新一轮 |
-| **当天** | 一次性的事，记在哪天就是哪天的 | 做完第二天就不显示了；**没做完会一直挂着**，标出「拖了 N 天」 |
-| **每周** | 每周要做一次的事 | 这一周都算做完，下周一变回没做 |
-| **每年** | 每年要做一次的事 / 年度目标 | 今年都算做完，明年变回没做 |
+| **Daily** | Things you do every day | **Not reset by the calendar.** It stays done until you press **↻ New round** |
+| **Today** | One-off things, tied to the day you added them | Gone the next day once done. **Unfinished ones stay** and show "*N*d overdue" |
+| **Weekly** | Once-a-week things | Done for the whole week; unchecked again next Monday |
+| **Yearly** | Once-a-year things / yearly goals | Done for the whole year; unchecked again next year |
 
-- 加任务：输入框打字 → 选分组（默认「当天」，也可以 `Ctrl+1`~`Ctrl+4` 切）→ 回车。
-- 删任务：点行尾的 `×`，会确认一下。
-- **重新开始**：「每天」标题右边的「↻ 重新开始」。你的「一天」自己定 ——
-  熬夜过了零点不会被清掉，起床后按一下才算新的一天。按了之后每天任务全部变回没做，
-  每天的奖励可以重新拿；当天 / 每周 / 每年的不受影响。旁边显示这一轮从什么时候开始。
-- 折叠：点分组标题。折叠状态会记住，**但「每天」每次打开都会展开** ——
-  每天的事每次打开都得看见。
+- **Add:** type in the box → pick a group (Today by default, or `Ctrl+1`–`Ctrl+4`) → Enter.
+- **Delete:** the `×` at the end of a row (asks to confirm).
+- **New round:** the **↻ New round** button next to the Daily heading. *You* decide when a day starts.
+  Staying up past midnight doesn't wipe your progress; press it when you get up. All daily tasks
+  are unchecked and daily rewards can be earned again. Today / weekly / yearly are untouched.
+  The time the current round started is shown next to it.
+- **Fold:** click a group heading. The folded state is remembered, **except Daily, which always
+  opens expanded**, so you see your daily tasks every time you open the app.
 
-## 奖励
+## Rewards
 
-窗口底部点「🎁 奖励」，选分组（每天 / 每周 / 每年）、完成到多少（50%、100% 一键选，
-也可以填 1~100 之间任意数）、奖励自己什么，添加。
+Click **🎁 Rewards** at the bottom. Pick a group (Daily / Weekly / Yearly), a threshold (50% and
+100% are one click, or type anything from 1 to 100), write down the reward, and add it.
 
-- 勾任务勾到够线的那一下，弹框告诉你拿到了什么奖励。一次跨过好几档就一起给。
-- **每个奖励每个周期只发一次**：每天的奖励按「↻ 重新开始」后重来，每周的下周一重来，每年的明年重来。
-  勾了又取消、再勾回来，不会重复发。
-- 分组标题上显示完成百分比，下面一行列着这个分组的奖励，这期拿到的标绿打勾。
-- 百分比只按这个分组自己的任务算：「每天完成 50%」只看每天任务，当天任务不算。
-- 当天任务不能设奖励 —— 它们是一次性的、会拖，按比例算没意义。
-- 新设一个奖励时如果已经够线了（比如已经做完一半才设 50%），关掉奖励窗口时直接发。
+- The moment a check pushes you over a threshold, a box tells you what you've earned. Cross
+  several thresholds at once and you get them all.
+- **Each reward is given once per period:** daily rewards again after **New round**, weekly ones
+  next Monday, yearly ones next year. Unchecking and re-checking doesn't pay out twice.
+- Each group heading shows its completion percentage; the line underneath lists its rewards,
+  with the ones earned this period in green.
+- The percentage only counts that group's tasks: "Daily 50%" looks at daily tasks only.
+- Today tasks can't have rewards. They're one-offs that can slip, so a percentage doesn't mean much.
+- If a new reward is already reached when you add it (say you're halfway and add a 50% reward),
+  you get it as soon as you close the Rewards window.
 
-## 活动记录
+## Activity graph
 
-窗口底部点「📅 记录」（或托盘右键 →「活动记录」）：
+Click **📅 Activity** at the bottom (or right-click the tray icon → Activity):
 
 ```
-过去一年完成了 377 件事                                    [过去一年]
-┌─────────────────────────────────────────────────────┐  [ 2026  ]
-│    10月   11月   12月   1月  …   8月   9月            │  [ 2025  ]
-│ 一 ▫▪▫▫▫▫▪▫▫▫▫▫▫▫▫▫▫▫▫▫▫▫▫▫▫ … ▪▪▫▪▪▪▪▪▪■▫         │
-│    ▫▫▫▫▫▫▫▪▫▫▪▪▫▫▫▫▫▫▫▫▫▫▫▫▫ … ▪▪▪■▪▪▪▪▪■□         │
-│ 三 …                                                 │
-│ 当前连续 61 天 · 最长连续 61 天         少 ▫ ▪ ▪ ■ ■ 多 │
+417 things done in the past year                         [Past year]
+┌─────────────────────────────────────────────────────┐  [  2026   ]
+│     Oct   Nov   Dec   Jan  …   Aug   Sep            │  [  2025   ]
+│ Mon ▫▪▫▫▫▫▪▫▫▫▫▫▫▫▫▫▫▫▫▫▫▫▫▫▫ … ▪▪▫▪▪▪▪▪▪■▫        │
+│     ▫▫▫▫▫▫▫▪▫▫▪▪▫▫▫▫▫▫▫▫▫▫▫▫▫ … ▪▪▪■▪▪▪▪▪■□        │
+│ Wed …                                               │
+│ Current streak 2 days · Longest 8 days  Less ▫ ▪ ▪ ■ ■ More │
 └─────────────────────────────────────────────────────┘
-今天 · 完成 2 件
-  22:07  ✓ [每天] 喝够 8 杯水
-  22:07  ✓ [每天] 背 20 个单词
-  22:07  🎁 拿到奖励：看一集剧（每天）
+Today · 2 done
+  22:07  ✓ [Daily] Drink 8 glasses of water
+  22:07  ✓ [Daily] Learn 20 words
+  22:07  🎁 Reward earned: Watch an episode (Daily)
 ```
 
-- 一格一天，一列一周（周一在最上面），颜色越深那天做完的事越多。
-  深浅按这段时间里最忙那天的比例分 4 档，跟 GitHub 一样。
-- 鼠标停在格子上看那天完成了几件；**点一下**，下面列出那天做完的每件事（几点、哪个分组）
-  和拿到的奖励。
-- 右边切「过去一年」或者某一年。
-- 连续天数：从今天往回数，每天至少做完一件就算连着。今天还没做不算断。
-- **删掉任务不会删掉它的记录** —— 历史是历史。只有「取消勾选」会撤掉对应那条（那是点错了）。
-- 升级到这个版本时，之前勾掉的任务和拿到的奖励都会补进来；
-  最早那个版本（接 Claude 那版）里做完的任务也会补进来，标成「旧版」。
+- One square per day, one column per week (Monday on top). Darker means more done that day.
+  Shades are 4 steps relative to the busiest day in view, like GitHub.
+- Hover a square to see the count; **click** it to list everything finished that day (time and
+  group) plus the rewards earned.
+- Switch between **Past year** and individual years on the right.
+- Streaks count back from today; any day with at least one finished task counts. Not having done
+  anything *yet* today doesn't break the streak.
+- **Deleting a task doesn't delete its history.** Only unchecking removes the matching entry,
+  because that means the check was a mistake.
+- On upgrade, earlier checks and rewards are backfilled. Tasks finished in the very first version
+  (the one that talked to Claude) are imported too, tagged `[old]`.
 
-## 打开和关闭
+## Language
 
-- **打开应用**：窗口直接弹出来，同时后台拉起定时提醒。
-- **已经开着再双击一次快捷方式**：把托盘里那个窗口叫出来（不会开第二个）。
-- **点窗口右上角的 ×**：窗口缩回托盘，**提醒照常**。点托盘图标再打开。
-- **点「退出」按钮 / 托盘右键 →「退出」**：应用退出，**后台提醒一起关**。
+Use the button in the top-right corner (it shows **中文** in English mode and **EN** in Chinese
+mode) or the tray menu. It switches **immediately**, no restart needed:
 
-## 定时提醒
+- UI text, date format ("Tue, Sep 29" ↔ "9月29日 周二") and the Yes / No buttons of dialogs.
+- The reminder switches too: spoken text, popup text and title, and **which voice** is used
+  (an English voice such as Zira, or a Chinese one such as Huihui). If you've written your own
+  reminder text in `config.json`, it's used as-is.
+- On first run it follows the Windows display language; after you switch once, your choice sticks.
+- The installer is bilingual as well and picks the language from Windows.
 
-打开应用时自动在后台跑，相当于这两段 PowerShell 合在一起：
+## Opening and closing
+
+- **Open the app:** the window pops up and the reminder starts in the background.
+- **Double-click the shortcut while it's already running:** the existing window comes to the
+  front (no second copy).
+- **× in the window corner:** the window hides to the tray. **Reminders keep running.** Click the
+  tray icon to bring it back.
+- **Quit button / tray → Quit:** the app exits and **the background reminder stops with it.**
+
+## Timed reminders
+
+Started automatically with the app. It's roughly these two PowerShell snippets combined:
 
 ```powershell
-# 每小时念一句
+# Speak every hour
 Add-Type -AssemblyName System.Speech
 $s = New-Object System.Speech.Synthesis.SpeechSynthesizer
-while ($true) { Start-Sleep -Seconds 3600; $s.Speak("喝水时间到了，顺便起来活动一下吧") }
+while ($true) { Start-Sleep -Seconds 3600; $s.Speak("Time for some water. Get up and move around a bit.") }
 
-# 弹个框
+# Pop up a box
 Add-Type -AssemblyName System.Windows.Forms
-[System.Windows.Forms.MessageBox]::Show("休息下吧", "提示")
+[System.Windows.Forms.MessageBox]::Show("Take a break.", "Reminder")
 ```
 
-实际跑的时候：每到点**同时**念那句话、弹「休息下吧」的框（框会盖在其他窗口上面）。
-你点掉弹框之后才开始算下一个小时 —— 人不在电脑前的话，回来只会看到一个框，
-不会攒一堆。
+When it fires, it speaks **and** shows the box at the same time. The box stays on top of other
+windows. The next hour only starts counting after you dismiss the box, so if you're away you come
+back to one box, not a pile of them.
 
-和直接用 `Start-Process powershell -WindowStyle Hidden ...` 的区别：
+How it differs from just running `Start-Process powershell -WindowStyle Hidden ...`:
 
-- **退出应用时一定会关掉**。`Start-Process` 起的进程跟应用断了关系，
-  应用退了它还在后台一小时念一次，只能去任务管理器里找。这里的提醒进程挂在
-  一个 Windows Job Object 上，应用**正常退出、崩溃、被任务管理器结束**，
-  提醒进程都会跟着被系统杀掉。
-- **有中文语音就用中文语音**。系统默认语音可能是英文的（Microsoft Zira），
-  念中文会乱读或者没声音；有 Microsoft Huihui 这类中文语音就自动换上。
-- **跑没跑起来看得见**。窗口底部显示状态：绿色「● 提醒在后台运行」是好的；
-  红色「✕ 提醒没跑起来：……」会带上 PowerShell 的报错原文，托盘也会弹通知。
-- **「试一下」**：立刻念一遍、弹一次框，确认有声音、框能弹出来。
+- **It always stops when the app stops.** A `Start-Process` child is detached from the app and
+  keeps talking every hour after you quit; you'd have to hunt it down in Task Manager. Here the
+  reminder process is attached to a Windows Job Object, so Windows kills it whether the app
+  **quits normally, crashes, or is ended from Task Manager.**
+- **It picks a voice in the right language.** The default Windows voice may not match, and an
+  English voice reading Chinese (or the other way round) is unintelligible.
+- **You can see whether it's running.** The bottom of the window shows a green
+  "● Reminder running", or a red "✕ Reminder failed to start: …" with PowerShell's own error
+  message, plus a tray notification.
+- **Try it:** speaks and pops up once right away, so you can check sound and popup.
 
-间隔在窗口底部直接改（改完从现在重新计时）；「暂停」/「开启」切换提醒，都会记住。
+Change the interval at the bottom of the window (it restarts counting from now). **Pause** /
+**Resume** toggles the reminder. Both are remembered.
 
-## 从源码运行
+## Running from source
 
-只是想用的话，看上面的「下载安装」。从源码跑需要 Python 3.10+。
+If you just want to use it, see **Download and install** above. Running from source needs Python 3.10+.
 
 ```powershell
 git clone https://github.com/Teneeduu/jo-app.git
@@ -174,113 +202,121 @@ pip install -r requirements.txt
 python -m joapp
 ```
 
-### 桌面快捷方式
+### Desktop shortcut
 
-从源码运行时没有独立的 exe —— 它跑在 `pythonw.exe -m joapp` 上（用 `pythonw`
-而不是 `python`，双击时才不会弹黑框）。快捷方式脚本会把这些接好，图标用
-`joapp/resources/jo-app.ico`：
+From source there's no standalone exe. It runs on `pythonw.exe -m joapp` (`pythonw` rather than
+`python`, so no console window flashes up). The shortcut script wires this up and uses
+`joapp/resources/jo-app.ico`:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\create_shortcut.ps1
-powershell -ExecutionPolicy Bypass -File .\scripts\create_shortcut.ps1 -StartMenu  # 顺带放开始菜单
-powershell -ExecutionPolicy Bypass -File .\scripts\create_shortcut.ps1 -Remove     # 删掉
+powershell -ExecutionPolicy Bypass -File .\scripts\create_shortcut.ps1 -StartMenu  # also add to Start menu
+powershell -ExecutionPolicy Bypass -File .\scripts\create_shortcut.ps1 -Remove     # remove
 ```
 
-图标是 `joapp/ui/style.py` 里用 QPainter 画的，改了配色重新导出：
+The icon is drawn with QPainter in `joapp/ui/style.py`. To re-export it after changing colours:
 
 ```powershell
 .\.venv\Scripts\python.exe scripts\make_icon.py
 ```
 
-### 设成开机自启
+### Start with Windows (from source)
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\install_startup.ps1
 ```
 
-会在「启动」文件夹放一个指向 `pythonw.exe -m joapp` 的快捷方式。取消：
+This puts a shortcut to `pythonw.exe -m joapp` in the Startup folder. To undo:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\uninstall_startup.ps1
 ```
 
-## 配置
+## Configuration
 
-首次运行会在数据目录生成 `config.json`：
+`config.json` is created in the data folder on first run:
 
-| 平台 | 位置 |
+| Platform | Location |
 |---|---|
 | Windows | `%APPDATA%\jo-app\` |
-| 其他 | `~/.jo-app/` |
+| Others | `~/.jo-app/` |
 
 ```jsonc
 {
-  "remind_enabled": true,                          // 打开应用就启动提醒
-  "remind_minutes": 60,                            // 间隔
-  "remind_voice": "喝水时间到了，顺便起来活动一下吧", // 念的话，空串 = 不念
-  "remind_popup": "休息下吧",                       // 弹框文字，空串 = 不弹
-  "collapsed": ["yearly"]                          // 折叠着的分组
+  "remind_enabled": true,                          // start the reminder with the app
+  "remind_minutes": 60,                            // interval
+  "remind_voice": "喝水时间到了，顺便起来活动一下吧", // spoken text; "" = don't speak
+  "remind_popup": "休息下吧",                       // popup text; "" = no popup
+  "language": "auto",                              // auto (follow Windows) / zh / en
+  "collapsed": ["yearly"]                          // folded groups
 }
 ```
 
-改了念的话 / 弹框文字之后重启应用生效。
+While `remind_voice` / `remind_popup` hold their default values, the reminder uses the default
+text *for the current language*. Put your own text there to override it in both languages.
+Restart the app after editing.
 
-同目录下：`jo.db` 是数据库（标准 SQLite，想自己写脚本查随便查），
-`reminder.log` 是提醒进程的输出，没跑起来时看这里。
+Also in that folder: `jo.db` is the database (plain SQLite; query it however you like), and
+`reminder.log` is the reminder process's output. Look there if it didn't start.
 
-### 从旧版本升级
+### Upgrading from the first version
 
-旧版本（接 Claude、按天排计划那一版）里**没做完**的任务，第一次打开新版时
-会自动搬成「当天」任务（带着原来的日期，所以会显示拖了几天）。旧表原样留在库里
-没删。`config.json` 里旧的键（`llm_enabled`、`focus_minutes`……）也原样留着，
-新版不读它们。
+Unfinished tasks from the first version (the one that talked to Claude and planned by the day)
+are moved into **Today** the first time the new version starts. They keep their original date,
+so they show how many days overdue they are. The old table is left untouched in the database.
+Old keys in `config.json` (`llm_enabled`, `focus_minutes`, …) are kept too but no longer read.
 
-## 项目结构
+## Project layout
 
 ```
 joapp/
-├─ config.py        配置读写
-├─ reminder.py      后台提醒进程：拼脚本、起进程、Job Object、状态
+├─ config.py        config read / write
+├─ i18n.py          中文 / English: t(), date formats, default reminder text
+├─ reminder.py      background reminder process: script, spawn, Job Object, status
 ├─ core/
-│  ├─ models.py     Scope（四个分组）/ Todo / Reward / Activity / 周期
-│  ├─ stats.py      活动记录的纯计算：格子排布、颜色分档、连续天数
-│  └─ store.py      SQLite 持久化，手写 SQL
+│  ├─ models.py     Scope (the four groups) / Todo / Reward / Activity / periods
+│  ├─ stats.py      pure math for the activity graph: grid, shades, streaks
+│  └─ store.py      SQLite persistence, hand-written SQL
 └─ ui/
-   ├─ app.py        装配、单实例、退出时收尾
-   ├─ window.py     主窗口
-   ├─ rewards.py    奖励设置窗口 + 拿到奖励的弹框
-   ├─ activity.py   活动记录：贡献图格子 + 某天的明细
-   ├─ tray.py       托盘
-   └─ style.py      QSS 主题 + 程序生成的图标
+   ├─ app.py        wiring, single instance, language switching, clean shutdown
+   ├─ window.py     main window
+   ├─ rewards.py    rewards dialog + "reward earned" popup
+   ├─ activity.py   activity graph + day details
+   ├─ tray.py       tray icon
+   └─ style.py      QSS theme + generated icon
 ```
 
-## 开发
+Design notes and trade-offs: [docs/DESIGN.md](docs/DESIGN.md).
+
+## Development
 
 ```powershell
 pip install -e ".[dev]"
 pytest
 ```
 
-提醒的测试会真的起 PowerShell 进程（只在 Windows 上跑），但间隔设成 10 小时、
-不弹框，跑测试时不会出声也不会弹窗。
+The reminder tests really start PowerShell processes (Windows only), but with a 10-hour interval
+and no popup, so running the tests makes no sound and shows no box.
+`tests/test_i18n.py` parses the source and fails if any `t("…")` string lacks an English translation.
 
-### 打包和发布
+### Building and releasing
 
 ```powershell
-# 本机打包：exe 在 build\dist\jo-app\，安装程序在 dist\jo-app-setup.exe（需要装 Inno Setup 7）
+# Local build: exe in build\dist\jo-app\, installer in dist\jo-app-setup.exe (needs Inno Setup 7)
 powershell -ExecutionPolicy Bypass -File .\scripts\build.ps1
-powershell -ExecutionPolicy Bypass -File .\scripts\build.ps1 -NoInstaller   # 只出 exe
+powershell -ExecutionPolicy Bypass -File .\scripts\build.ps1 -NoInstaller   # exe only
 ```
 
-发布新版本：改 `joapp/__init__.py` 和 `pyproject.toml` 里的版本号，提交，然后推一个同名 tag：
+To release: bump the version in `joapp/__init__.py` and `pyproject.toml`, commit, then push a
+matching tag:
 
 ```powershell
-git tag v0.3.0
-git push origin v0.3.0
+git tag v0.6.0
+git push origin v0.6.0
 ```
 
-GitHub Actions（`.github/workflows/release.yml`）会跑测试、用同一个 `build.ps1` 打包、
-把 `jo-app-setup.exe` 发到 Releases。tag 和代码里的版本号对不上会直接失败。
+GitHub Actions (`.github/workflows/release.yml`) runs the tests, builds with the same `build.ps1`,
+and publishes `jo-app-setup.exe` to Releases. It fails if the tag doesn't match the version in the code.
 
 ## License
 

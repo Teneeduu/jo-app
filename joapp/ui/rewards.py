@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
 
 from ..core.models import REWARD_SCOPES, Reward
 from ..core.store import Store
+from ..i18n import t
 
 
 class RewardsDialog(QDialog):
@@ -33,17 +34,17 @@ class RewardsDialog(QDialog):
     def __init__(self, store: Store, parent: QWidget | None = None):
         super().__init__(parent)
         self.store = store
-        self.setWindowTitle("给自己的奖励")
+        self.setWindowTitle(t("给自己的奖励"))
         self.setMinimumSize(440, 460)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(24, 20, 24, 20)
         root.setSpacing(12)
 
-        title = QLabel("完成到多少，奖励自己什么")
+        title = QLabel(t("完成到多少，奖励自己什么"))
         title.setObjectName("Title")
         root.addWidget(title)
-        hint = QLabel("每个奖励每个周期只发一次：每天的按「重新开始」后重来，每周的下周一重来，每年的明年重来。")
+        hint = QLabel(t("每个奖励每个周期只发一次：每天的按「重新开始」后重来，每周的下周一重来，每年的明年重来。"))
         hint.setObjectName("Subtitle")
         hint.setWordWrap(True)
         root.addWidget(hint)
@@ -66,7 +67,7 @@ class RewardsDialog(QDialog):
 
         scopes = QHBoxLayout()
         scopes.setSpacing(6)
-        scopes.addWidget(QLabel("分组"))
+        scopes.addWidget(QLabel(t("分组")))
         self._scope_group = QButtonGroup(self)
         for i, scope in enumerate(REWARD_SCOPES):
             btn = QPushButton(scope.label)
@@ -80,7 +81,7 @@ class RewardsDialog(QDialog):
 
         pct = QHBoxLayout()
         pct.setSpacing(6)
-        pct.addWidget(QLabel("完成到"))
+        pct.addWidget(QLabel(t("完成到")))
         self.percent = QSpinBox()
         self.percent.setRange(1, 100)
         self.percent.setValue(100)
@@ -95,10 +96,10 @@ class RewardsDialog(QDialog):
 
         add_row = QHBoxLayout()
         self.text = QLineEdit()
-        self.text.setPlaceholderText("奖励自己……比如「看一集剧」「买杯奶茶」")
+        self.text.setPlaceholderText(t("奖励自己……比如「看一集剧」「买杯奶茶」"))
         self.text.returnPressed.connect(self._add)
         add_row.addWidget(self.text, 1)
-        add = QPushButton("添加")
+        add = QPushButton(t("添加"))
         add.setObjectName("Primary")
         add.clicked.connect(self._add)
         add_row.addWidget(add)
@@ -106,7 +107,7 @@ class RewardsDialog(QDialog):
 
         bottom = QHBoxLayout()
         bottom.addStretch()
-        done = QPushButton("完成")
+        done = QPushButton(t("完成"))
         done.clicked.connect(self.accept)
         bottom.addWidget(done)
         root.addLayout(bottom)
@@ -122,7 +123,7 @@ class RewardsDialog(QDialog):
 
         rewards = self.store.rewards()
         if not rewards:
-            empty = QLabel("还没设奖励。在下面加一个。")
+            empty = QLabel(t("还没设奖励。在下面加一个。"))
             empty.setObjectName("Muted")
             self._list.addWidget(empty)
         for reward in rewards:
@@ -132,17 +133,25 @@ class RewardsDialog(QDialog):
         row = QWidget()
         h = QHBoxLayout(row)
         h.setContentsMargins(0, 2, 0, 2)
-        label = QLabel(f"{reward.scope.label}完成 {reward.percent}%   →   {reward.text}")
+        label = QLabel(
+            t(
+                "{scope}完成 {percent}%   →   {text}",
+                scope=reward.scope.label,
+                percent=reward.percent,
+                text=reward.text,
+            )
+        )
+        label.setTextFormat(Qt.PlainText)  # 奖励内容是用户写的，别当 HTML 解析
         label.setWordWrap(True)
         h.addWidget(label, 1)
         if reward.earned:
-            got = QLabel("这期已拿到")
+            got = QLabel(t("这期已拿到"))
             got.setObjectName("Ok")
             h.addWidget(got)
         delete = QToolButton()
         delete.setObjectName("Delete")
         delete.setText("×")
-        delete.setToolTip("删除这个奖励")
+        delete.setToolTip(t("删除这个奖励"))
         delete.setCursor(Qt.PointingHandCursor)
         delete.clicked.connect(lambda _=False, rid=reward.id: self._delete(rid))
         h.addWidget(delete)
@@ -169,7 +178,7 @@ class EarnedDialog(QDialog):
 
     def __init__(self, earned: list[Reward], progress: dict, parent: QWidget | None = None):
         super().__init__(parent)
-        self.setWindowTitle("拿到奖励了")
+        self.setWindowTitle(t("拿到奖励了"))
         self.setWindowFlags(self.windowFlags() | Qt.WindowStaysOnTopHint)
         self.setMinimumWidth(380)
 
@@ -179,23 +188,23 @@ class EarnedDialog(QDialog):
 
         top = earned[-1]  # 一次跨过好几档时，标题报最高的那档
         done, total = progress[top.scope]
-        head = QLabel(f"🎉 {top.scope.label}任务完成了 {done}/{total}")
+        head = QLabel(t("🎉 {scope}任务完成了 {done}/{total}", scope=top.scope.label, done=done, total=total))
         head.setObjectName("Title")
         root.addWidget(head)
 
         for reward in earned:
-            line = QLabel(f"达到 {reward.percent}%  →  <b>{_escape(reward.text)}</b>")
+            line = QLabel(t("达到 {percent}%  →  <b>{text}</b>", percent=reward.percent, text=_escape(reward.text)))
             line.setTextFormat(Qt.RichText)
             line.setWordWrap(True)
             root.addWidget(line)
 
-        sub = QLabel("去兑现吧，这是你自己挣的。")
+        sub = QLabel(t("去兑现吧，这是你自己挣的。"))
         sub.setObjectName("Subtitle")
         root.addWidget(sub)
 
         row = QHBoxLayout()
         row.addStretch()
-        ok = QPushButton("收下")
+        ok = QPushButton(t("收下"))
         ok.setObjectName("Primary")
         ok.clicked.connect(self.accept)
         row.addWidget(ok)

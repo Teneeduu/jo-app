@@ -17,9 +17,10 @@ from PySide6.QtCore import QLibraryInfo, QLocale, QObject, QSharedMemory, QTimer
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtWidgets import QApplication, QSystemTrayIcon
 
-from .. import APP_NAME, config
+from .. import APP_NAME, config, i18n
 from ..core.models import Scope
 from ..core.store import Store
+from ..i18n import t
 from ..reminder import Reminder
 from .activity import ActivityWindow
 from .style import QSS, app_icon
@@ -83,12 +84,20 @@ def _setup_logging() -> None:
         logging.basicConfig(level=logging.INFO, format=fmt)
 
 
-def _install_chinese_qt(app: QApplication) -> None:
-    """Qt 自带的按钮（确认框的 Yes / No 之类）换成中文。找不到翻译文件就算了，不影响用。"""
+def _apply_qt_language(app: QApplication) -> None:
+    """Qt 自带的按钮（确认框的 Yes / No 之类）跟着界面语言：中文装翻译，英文卸掉。
+    找不到翻译文件就算了，不影响用。"""
+    old = getattr(app, "_qt_translator", None)
+    if old is not None:
+        app.removeTranslator(old)
+        app._qt_translator = None
+    if i18n.language() != "zh":
+        return
     translator = QTranslator(app)
     path = QLibraryInfo.path(QLibraryInfo.TranslationsPath)
     if translator.load(QLocale(QLocale.Chinese, QLocale.China), "qtbase", "_", path):
         app.installTranslator(translator)
+        app._qt_translator = translator
     else:
         log.info("没找到 qtbase 中文翻译（%s），Qt 自带按钮保持英文", path)
 
@@ -123,30 +132,16 @@ class JoApp(QObject):
             lambda: self.set_reminder_enabled(not self.cfg.remind_enabled)
         )
         self.tray.quit_requested.connect(self.quit)
+        self.tray.language_toggled.connect(self.toggle_language)
 
-        self.window = MainWindow(
-            self.store,
-            collapsed=list(self.cfg.collapsed),
-            minutes=self.cfg.remind_minutes,
-            enabled=self.cfg.remind_enabled,
-        )
-        self.window.hidden_to_tray.connect(self._on_hidden)
-        self.window.quit_requested.connect(self.quit)
-        self.window.test_reminder.connect(self.test_reminder)
-        self.window.reminder_enabled_changed.connect(self.set_reminder_enabled)
-        self.window.reminder_minutes_changed.connect(self.set_reminder_minutes)
-        self.window.collapsed_changed.connect(self._save_collapsed)
-        self.window.activity_requested.connect(self.open_activity)
-        self.window.changed.connect(self._refresh_activity)
+        self.window = self._build_window()
         self._activity: ActivityWindow | None = None
 
         # 每天任务每次打开都得看见 —— 上次折叠了也展开
         self.window.expand(Scope.DAILY)
 
         if self.cfg.remind_enabled:
-            self.reminder.start(
-                self.cfg.remind_voice, self.cfg.remind_popup, self.cfg.remind_minutes
-            )
+            self._start_reminder()
         self._poll()
 
         self.timer = QTimer(self)
@@ -163,6 +158,66 @@ class JoApp(QObject):
         self._show_server.listen(SHOW_SERVER)
         self.window.bring_up()
 
+    def _build_window(self) -> MainWindow:
+        window = MainWindow(
+            self.store,
+            collapsed=list(self.cfg.collapsed),
+            minutes=self.cfg.remind_minutes,
+            enabled=self.cfg.remind_enabled,
+        )
+        window.hidden_to_tray.connect(self._on_hidden)
+        window.quit_requested.connect(self.quit)
+        window.test_reminder.connect(self.test_reminder)
+        window.reminder_enabled_changed.connect(self.set_reminder_enabled)
+        window.reminder_minutes_changed.connect(self.set_reminder_minutes)
+        window.collapsed_changed.connect(self._save_collapsed)
+        window.activity_requested.connect(self.open_activity)
+        window.changed.connect(self._refresh_activity)
+        window.language_toggled.connect(self.toggle_language)
+        return window
+
+    # ---------- 语言 ----------
+
+    def toggle_language(self) -> None:
+        self.set_language("en" if i18n.language() == "zh" else "zh")
+
+    def set_language(self, lang: str) -> None:
+        """当场切：窗口按新语言重建（位置、没提交的输入都留着），托盘菜单重建，
+        提醒换成对应语言的话和语音重新开始。"""
+        if lang == i18n.language():
+            return
+        i18n.set_language(lang)
+        self.cfg.language = lang
+        config.save(self.cfg)
+        _apply_qt_language(self.app)
+
+        old = self.window
+        was_visible = old.isVisible()
+        draft = old.input.text()
+        self.window = self._build_window()
+        self.window.setGeometry(old.geometry())
+        self.window.input.setText(draft)
+        old.allow_close = True
+        old.close()
+        old.deleteLater()
+        if was_visible:
+            self.window.bring_up()
+
+        if self._activity is not None:
+            reopen = self._activity.isVisible()
+            geometry = self._activity.geometry()
+            self._activity.close()
+            self._activity.deleteLater()
+            self._activity = None
+            if reopen:
+                self.open_activity()
+                self._activity.setGeometry(geometry)
+
+        self.tray.build_menu()
+        if self.cfg.remind_enabled:
+            self._start_reminder()
+        self._poll()
+
     # ---------- 周期检查 ----------
 
     def _poll(self) -> None:
@@ -177,18 +232,30 @@ class JoApp(QObject):
         self.tray.set_reminder(self.cfg.remind_enabled, status.detail)
         if status.state == "failed" and self._last_state != "failed":
             log.warning("提醒进程失败: %s", status.detail)
-            self.tray.notify("提醒没跑起来", status.detail)
+            self.tray.notify(t("提醒没跑起来"), status.detail)
         self._last_state = status.state
 
     # ---------- 提醒 ----------
+
+    def _reminder_texts(self) -> tuple[str, str]:
+        """默认的话跟着界面语言走；用户在 config.json 里改过的原样用。"""
+        return (
+            i18n.reminder_text(self.cfg.remind_voice, i18n.DEFAULT_VOICE),
+            i18n.reminder_text(self.cfg.remind_popup, i18n.DEFAULT_POPUP),
+        )
+
+    def _start_reminder(self) -> None:
+        lang = i18n.language()
+        self.reminder.title = i18n.POPUP_TITLE[lang]
+        self.reminder.culture = i18n.VOICE_CULTURE[lang]
+        voice, popup = self._reminder_texts()
+        self.reminder.start(voice, popup, self.cfg.remind_minutes)
 
     def set_reminder_enabled(self, enabled: bool) -> None:
         self.cfg.remind_enabled = enabled
         config.save(self.cfg)
         if enabled:
-            self.reminder.start(
-                self.cfg.remind_voice, self.cfg.remind_popup, self.cfg.remind_minutes
-            )
+            self._start_reminder()
         else:
             self.reminder.stop()
         self.window.set_reminder_enabled(enabled)
@@ -200,13 +267,11 @@ class JoApp(QObject):
         self.cfg.remind_minutes = minutes
         config.save(self.cfg)
         if self.cfg.remind_enabled:  # 重启一下，从现在开始重新计时
-            self.reminder.start(
-                self.cfg.remind_voice, self.cfg.remind_popup, minutes
-            )
+            self._start_reminder()
         self._poll()
 
     def test_reminder(self) -> None:
-        self.reminder.fire_now(self.cfg.remind_voice, self.cfg.remind_popup)
+        self.reminder.fire_now(*self._reminder_texts())
 
     # ---------- 窗口 ----------
 
@@ -232,7 +297,7 @@ class JoApp(QObject):
         if not self._told_about_tray:
             self._told_about_tray = True
             self.tray.notify(
-                "jo-app 还在托盘里", "提醒照常。要彻底退出，右键托盘图标 →「退出」。"
+                t("jo-app 还在托盘里"), t("提醒照常。要彻底退出，右键托盘图标 →「退出」。")
             )
 
     def _save_collapsed(self, collapsed: list) -> None:
@@ -270,7 +335,8 @@ def run(argv: list[str] | None = None) -> int:
     app._installer_mutex = _hold_installer_mutex()  # 进程退出时系统自动释放
 
     app.setApplicationName(APP_NAME)
-    _install_chinese_qt(app)
+    i18n.set_language(i18n.resolve(config.load().language))
+    _apply_qt_language(app)
     app.setWindowIcon(app_icon())
     app.setStyleSheet(QSS)
     app.setQuitOnLastWindowClosed(False)  # 关窗口不退出，缩回托盘

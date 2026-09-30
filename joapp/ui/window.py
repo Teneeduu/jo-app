@@ -29,14 +29,15 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from .. import i18n
 from ..core.models import REWARD_SCOPES, Reward, Scope, Todo
+from ..i18n import t
 from ..core.store import Store
 from ..reminder import Status
 from .rewards import EarnedDialog, RewardsDialog
 
 ORDER = (Scope.DAILY, Scope.TODAY, Scope.WEEKLY, Scope.YEARLY)
 OK_COLOR = "#5fb07a"
-WEEKDAYS = "一二三四五六日"
 
 
 class _Section(QWidget):
@@ -68,10 +69,10 @@ class _Section(QWidget):
             self.round_label = QLabel("")
             self.round_label.setObjectName("Muted")
             top.addWidget(self.round_label)
-            reset = QPushButton("↻ 重新开始")
+            reset = QPushButton(t("↻ 重新开始"))
             reset.setObjectName("Reset")
             reset.setCursor(Qt.PointingHandCursor)
-            reset.setToolTip("每天任务全部变回没做，每天的奖励可以重新拿")
+            reset.setToolTip(t("每天任务全部变回没做，每天的奖励可以重新拿"))
             reset.clicked.connect(self.reset_requested.emit)
             top.addWidget(reset)
             layout.addLayout(top)
@@ -106,7 +107,7 @@ class _Section(QWidget):
                 item.widget().deleteLater()
 
         if not todos:
-            empty = QLabel("还没有")
+            empty = QLabel(t("还没有"))
             empty.setObjectName("Muted")
             self._rows.addWidget(empty)
         for todo in todos:
@@ -115,10 +116,10 @@ class _Section(QWidget):
 
     def set_round_started(self, started) -> None:
         if self.round_label is not None and started is not None:
-            self.round_label.setText(
-                f"{started.month}/{started.day} {started:%H:%M} 起"
+            self.round_label.setText(i18n.round_since(started))
+            self.round_label.setToolTip(
+                t("这一轮从 {when} 开始", when=f"{started:%Y-%m-%d %H:%M}")
             )
-            self.round_label.setToolTip(f"这一轮从 {started:%Y-%m-%d %H:%M} 开始")
 
     def set_rewards(self, rewards: list[Reward]) -> None:
         """「🎁 50% 看一集剧 ✓ · 100% 吃顿好的」—— 拿到的标绿打勾。"""
@@ -147,14 +148,14 @@ class _Section(QWidget):
 
         late = todo.overdue_days(today)
         if late:
-            tail = QLabel(f"拖了 {late} 天")
+            tail = QLabel(t("拖了 {n} 天", n=late))
             tail.setObjectName("Bad")
             h.addWidget(tail)
 
         delete = QToolButton()
         delete.setObjectName("Delete")
         delete.setText("×")
-        delete.setToolTip("删除")
+        delete.setToolTip(t("删除"))
         delete.setCursor(Qt.PointingHandCursor)
         delete.clicked.connect(lambda _=False, t=todo: self.delete_requested.emit(t))
         h.addWidget(delete)
@@ -204,6 +205,7 @@ class MainWindow(QWidget):
     reminder_enabled_changed = Signal(bool)
     reminder_minutes_changed = Signal(int)
     collapsed_changed = Signal(list)  # 当前折叠着的 scope 值列表
+    language_toggled = Signal()
     activity_requested = Signal()
     changed = Signal()  # 勾 / 取消 / 删 / 重新开始之后，活动记录窗口要跟着刷新
 
@@ -226,11 +228,18 @@ class MainWindow(QWidget):
         self.date_label = QLabel("")
         self.date_label.setObjectName("Subtitle")
         top.addWidget(self.date_label)
+        # 语言按钮写的是「要切到的那种」，两种语言的人都认得出来
+        lang = QPushButton("EN" if i18n.language() == "zh" else "中文")
+        lang.setObjectName("Reset")
+        lang.setCursor(Qt.PointingHandCursor)
+        lang.setToolTip("Switch to English" if i18n.language() == "zh" else "切换到中文")
+        lang.clicked.connect(self.language_toggled.emit)
+        top.addWidget(lang)
         root.addLayout(top)
 
         # --- 加任务：一行字 + 选分组，回车就记 ---
         self.input = QLineEdit()
-        self.input.setPlaceholderText("加个任务，回车记下")
+        self.input.setPlaceholderText(t("加个任务，回车记下"))
         self.input.returnPressed.connect(self._add)
         root.addWidget(self.input)
 
@@ -249,7 +258,7 @@ class MainWindow(QWidget):
             QShortcut(QKeySequence(f"Ctrl+{i + 1}"), self, activated=btn.click)
         self._scope_group.button(ORDER.index(Scope.TODAY)).setChecked(True)
         scopes.addStretch()
-        add = QPushButton("添加")
+        add = QPushButton(t("添加"))
         add.setObjectName("Primary")
         add.clicked.connect(self._add)
         scopes.addWidget(add)
@@ -283,18 +292,18 @@ class MainWindow(QWidget):
         root.addWidget(line)
 
         remind = QHBoxLayout()
-        remind.addWidget(QLabel("提醒：每"))
+        remind.addWidget(QLabel(t("提醒：每")))
         self.minutes = QSpinBox()
         self.minutes.setRange(1, 600)
         self.minutes.setValue(minutes)
-        self.minutes.setSuffix(" 分钟")
+        self.minutes.setSuffix(t(" 分钟"))
         self.minutes.editingFinished.connect(
             lambda: self.reminder_minutes_changed.emit(self.minutes.value())
         )
         remind.addWidget(self.minutes)
         remind.addStretch()
-        test = QPushButton("试一下")
-        test.setToolTip("立刻念一遍、弹一次框")
+        test = QPushButton(t("试一下"))
+        test.setToolTip(t("立刻念一遍、弹一次框"))
         test.clicked.connect(self.test_reminder.emit)
         remind.addWidget(test)
         self.enable_btn = QPushButton()
@@ -308,16 +317,16 @@ class MainWindow(QWidget):
         self.status = QLabel("")
         self.status.setWordWrap(True)
         bottom.addWidget(self.status, 1)
-        activity_btn = QPushButton("📅 记录")
-        activity_btn.setToolTip("活动记录：像 GitHub 那样看每天做了哪些事")
+        activity_btn = QPushButton(t("📅 记录"))
+        activity_btn.setToolTip(t("活动记录：像 GitHub 那样看每天做了哪些事"))
         activity_btn.clicked.connect(self.activity_requested.emit)
         bottom.addWidget(activity_btn)
-        rewards_btn = QPushButton("🎁 奖励")
-        rewards_btn.setToolTip("给每天 / 每周 / 每年的完成度设奖励")
+        rewards_btn = QPushButton(t("🎁 奖励"))
+        rewards_btn.setToolTip(t("给每天 / 每周 / 每年的完成度设奖励"))
         rewards_btn.clicked.connect(self.open_rewards)
         bottom.addWidget(rewards_btn)
-        quit_btn = QPushButton("退出")
-        quit_btn.setToolTip("退出 jo-app，后台提醒一起关掉")
+        quit_btn = QPushButton(t("退出"))
+        quit_btn.setToolTip(t("退出 jo-app，后台提醒一起关掉"))
         quit_btn.clicked.connect(self.quit_requested.emit)
         bottom.addWidget(quit_btn)
         root.addLayout(bottom)
@@ -330,10 +339,7 @@ class MainWindow(QWidget):
 
     def refresh(self) -> None:
         today = date.today()
-        week = today.isocalendar()[1]
-        self.date_label.setText(
-            f"{today.month}月{today.day}日 周{WEEKDAYS[today.weekday()]} · 第{week}周"
-        )
+        self.date_label.setText(i18n.date_line(today))
         for scope, section in self.sections.items():
             section.set_todos(self.store.todos(scope, today), today)
             if scope in REWARD_SCOPES:
@@ -365,12 +371,13 @@ class MainWindow(QWidget):
         done, total = self.store.progress(Scope.DAILY)
         answer = QMessageBox.question(
             self,
-            "重新开始",
-            f"开始新一轮每天任务？\n\n"
-            f"这一轮做完了 {done}/{total} 件。重新开始后：\n"
-            f"· 每天任务全部变回没做\n"
-            f"· 每天的奖励可以重新拿\n\n"
-            f"当天 / 每周 / 每年的不受影响。",
+            t("重新开始"),
+            t(
+                "开始新一轮每天任务？\n\n这一轮做完了 {done}/{total} 件。重新开始后：\n"
+                "· 每天任务全部变回没做\n· 每天的奖励可以重新拿\n\n当天 / 每周 / 每年的不受影响。",
+                done=done,
+                total=total,
+            ),
         )
         if answer == QMessageBox.Yes:
             self.store.reset_daily()
@@ -396,9 +403,13 @@ class MainWindow(QWidget):
         EarnedDialog(earned, {scope: self.store.progress(scope)}, self).exec()
 
     def _delete(self, todo: Todo) -> None:
-        note = "" if todo.scope is Scope.TODAY else f"\n\n这是{todo.scope.label}都会出现的任务，删了以后就不再出现。"
+        note = (
+            ""
+            if todo.scope is Scope.TODAY
+            else t("\n\n这是{scope}都会出现的任务，删了以后就不再出现。", scope=todo.scope.label)
+        )
         answer = QMessageBox.question(
-            self, "删除任务", f"删掉「{todo.title}」？{note}"
+            self, t("删除任务"), t("删掉「{title}」？", title=todo.title) + note
         )
         if answer == QMessageBox.Yes:
             self.store.delete(todo.id)
@@ -417,19 +428,19 @@ class MainWindow(QWidget):
 
     def set_reminder_enabled(self, enabled: bool) -> None:
         self._enabled = enabled
-        self.enable_btn.setText("暂停" if enabled else "开启")
+        self.enable_btn.setText(t("暂停") if enabled else t("开启"))
         self.minutes.setEnabled(enabled)
 
     def set_reminder_status(self, status: Status) -> None:
         if status.state == "off":
             self.status.setObjectName("Muted")
-            self.status.setText("提醒已暂停")
+            self.status.setText(t("提醒已暂停"))
         elif status.ok:
             self.status.setObjectName("Ok")
-            self.status.setText(f"● 提醒在后台运行 · {status.detail}")
+            self.status.setText(t("● 提醒在后台运行 · {detail}", detail=status.detail))
         else:
             self.status.setObjectName("Bad")
-            self.status.setText(f"✕ 提醒没跑起来：{status.detail}")
+            self.status.setText(t("✕ 提醒没跑起来：{detail}", detail=status.detail))
         self.status.style().unpolish(self.status)
         self.status.style().polish(self.status)
 

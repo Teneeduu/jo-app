@@ -1,4 +1,5 @@
-﻿; jo-app 安装程序（Inno Setup 7）。
+﻿; jo-app installer (Inno Setup 7) / jo-app 安装程序。
+; English and Simplified Chinese; picked from the Windows UI language automatically.
 ; 由 scripts\build.ps1 调用：ISCC /DAppVersion=x.y.z packaging\installer.iss
 ; 输入是 PyInstaller 打出来的 build\dist\jo-app\，输出 dist\jo-app-setup.exe。
 ;
@@ -39,13 +40,26 @@ WizardStyle=modern
 ; jo-app 开着的时候 exe 被占用，覆盖不了。这个名字和 joapp/ui/app.py 的
 ; INSTALLER_MUTEX 一致：检测到就请用户先退出（托盘右键 →「退出」）。
 AppMutex=jo-app-running
+; 按系统界面语言自动选中文 / 英文，认不出来才弹选择框
+ShowLanguageDialog=auto
 
 [Languages]
+Name: "en"; MessagesFile: "compiler:Default.isl"
 Name: "chs"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
 
+[CustomMessages]
+en.Extra=Additional options:
+chs.Extra=附加选项：
+en.DesktopIcon=Create a desktop shortcut
+chs.DesktopIcon=在桌面创建快捷方式
+en.AutoStart=Start with Windows (see your tasks when you log in; reminders start automatically)
+chs.AutoStart=开机自动启动（打开电脑就看到任务，休息提醒自动开始）
+en.LaunchNow=Open jo-app now
+chs.LaunchNow=现在打开 jo-app
+
 [Tasks]
-Name: "desktopicon"; Description: "在桌面创建快捷方式"; GroupDescription: "附加选项："
-Name: "autostart"; Description: "开机自动启动（打开电脑就看到任务，休息提醒自动开始）"; GroupDescription: "附加选项："
+Name: "desktopicon"; Description: "{cm:DesktopIcon}"; GroupDescription: "{cm:Extra}"
+Name: "autostart"; Description: "{cm:AutoStart}"; GroupDescription: "{cm:Extra}"
 
 [InstallDelete]
 ; 升级时先清掉旧版的运行库，免得新旧两版的 Qt 文件混在一起
@@ -62,7 +76,7 @@ Name: "{autodesktop}\jo-app"; Filename: "{app}\{#AppExe}"; Tasks: desktopicon
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "jo-app"; ValueData: """{app}\{#AppExe}"""; Flags: uninsdeletevalue; Tasks: autostart
 
 [Run]
-Filename: "{app}\{#AppExe}"; Description: "现在打开 jo-app"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\{#AppExe}"; Description: "{cm:LaunchNow}"; Flags: nowait postinstall skipifsilent
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}"

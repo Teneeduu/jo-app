@@ -21,24 +21,21 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from .. import i18n
 from ..core import stats
 from ..core.store import Store
+from ..i18n import t
 from .style import MUTED, TEXT
 
 # 暗色主题下的 GitHub 绿，0 = 没有记录
 COLORS = ["#232733", "#0e4429", "#006d32", "#26a641", "#39d353"]
 REWARD_COLOR = "#d9a441"
-WEEKDAYS = "一二三四五六日"
 
 CELL = 11
 GAP = 3
 STEP = CELL + GAP
-LEFT = 26  # 左边写「一 三 五」
+LEFT = 30  # 左边写「一 三 五」/ Mon Wed Fri
 TOP = 18  # 上边写月份
-
-
-def _day_text(d: date) -> str:
-    return f"{d.month}月{d.day}日 周{WEEKDAYS[d.weekday()]}"
 
 
 def _discard(widget: QWidget) -> None:
@@ -96,7 +93,8 @@ class HeatMap(QWidget):
         p.setFont(font)
         p.setPen(QColor(MUTED))
 
-        for row, name in ((0, "一"), (2, "三"), (4, "五")):
+        for row in (0, 2, 4):
+            name = i18n.weekday_short(row)
             p.drawText(QRect(0, TOP + row * STEP - 2, LEFT - 6, CELL + 4), Qt.AlignRight | Qt.AlignVCenter, name)
 
         # 月份：写在包含 1 号的那一列上；第一列的月份离下一个标签够远才写，免得挤在一起
@@ -109,7 +107,7 @@ class HeatMap(QWidget):
         if first is not None and (not labels or labels[0][0] >= 3) and first.day != 1:
             labels.insert(0, (0, first.month))
         for col, month in labels:
-            p.drawText(QRect(LEFT + col * STEP, 0, 40, TOP - 4), Qt.AlignLeft | Qt.AlignBottom, f"{month}月")
+            p.drawText(QRect(LEFT + col * STEP, 0, 40, TOP - 4), Qt.AlignLeft | Qt.AlignBottom, i18n.month_short(month))
 
         p.setPen(Qt.NoPen)
         for col, days in enumerate(self._columns):
@@ -135,7 +133,9 @@ class HeatMap(QWidget):
         n = self._counts.get(d, 0)
         QToolTip.showText(
             event.globalPosition().toPoint(),
-            f"{_day_text(d)} · " + (f"完成 {n} 件" if n else "没有记录"),
+            t("{day} · 完成 {n} 件", day=i18n.day_text(d), n=n)
+            if n
+            else t("{day} · 没有记录", day=i18n.day_text(d)),
             self,
         )
         self.setCursor(Qt.PointingHandCursor)
@@ -150,7 +150,7 @@ class ActivityWindow(QWidget):
     def __init__(self, store: Store):
         super().__init__()
         self.store = store
-        self.setWindowTitle("jo-app · 活动记录")
+        self.setWindowTitle(t("jo-app · 活动记录"))
         self.setMinimumSize(560, 480)
         self.resize(LEFT + 53 * STEP + 200, 580)  # 默认放得下一整年，不用横着滚
 
@@ -188,7 +188,7 @@ class ActivityWindow(QWidget):
         self.streak.setObjectName("Muted")
         legend.addWidget(self.streak)
         legend.addStretch()
-        less = QLabel("少")
+        less = QLabel(t("少"))
         less.setObjectName("Muted")
         legend.addWidget(less)
         for color in COLORS:
@@ -196,7 +196,7 @@ class ActivityWindow(QWidget):
             swatch.setFixedSize(CELL, CELL)
             swatch.setStyleSheet(f"background:{color}; border-radius:2px;")
             legend.addWidget(swatch)
-        more = QLabel("多")
+        more = QLabel(t("多"))
         more.setObjectName("Muted")
         legend.addWidget(more)
         card_layout.addLayout(legend)
@@ -241,10 +241,15 @@ class ActivityWindow(QWidget):
         self.heatmap.adjustSize()
 
         total = sum(counts.values())
-        span = "过去一年" if self._year is None else f"{self._year} 年"
-        self.summary.setText(f"{span}完成了 {total} 件事")
+        self.summary.setText(
+            t("过去一年完成了 {total} 件事", total=total)
+            if self._year is None
+            else t("{year} 年完成了 {total} 件事", year=self._year, total=total)
+        )
         current, longest = stats.streaks(self.store.activity_days(), today)
-        self.streak.setText(f"当前连续 {current} 天 · 最长连续 {longest} 天")
+        self.streak.setText(
+            t("当前连续 {current} 天 · 最长连续 {longest} 天", current=current, longest=longest)
+        )
 
         if not (start <= self._selected <= end):
             self._selected = end
@@ -258,9 +263,10 @@ class ActivityWindow(QWidget):
                 self._year_group.removeButton(btn)
                 _discard(btn)
             for value in options:
-                btn = QPushButton("过去一年" if value is None else str(value))
+                btn = QPushButton(t("过去一年") if value is None else str(value))
                 btn.setObjectName("Scope")
                 btn.setCheckable(True)
+                btn.setMinimumWidth(96)  # 「Past year」加粗后放得下
                 btn.clicked.connect(lambda _=False, v=value: self._pick_year(v))
                 self._year_group.addButton(btn)
                 self._years_box.addWidget(btn)
@@ -289,8 +295,12 @@ class ActivityWindow(QWidget):
 
         items = self.store.activity_on(day)
         tasks = sum(1 for a in items if a.kind == "task")
-        label = "今天" if day == date.today() else _day_text(day)
-        self.day_title.setText(f"{label} · 完成 {tasks} 件" if tasks else f"{label} · 没有记录")
+        label = t("今天") if day == date.today() else i18n.day_text(day)
+        self.day_title.setText(
+            t("{day} · 完成 {n} 件", day=label, n=tasks)
+            if tasks
+            else t("{day} · 没有记录", day=label)
+        )
         for a in items:
             row = QHBoxLayout()
             row.setSpacing(10)
@@ -299,11 +309,15 @@ class ActivityWindow(QWidget):
             time.setFixedWidth(40)
             row.addWidget(time)
             if a.kind == "reward":
-                text = QLabel(f"🎁 拿到奖励：{a.title}" + (f"（{a.scope.label}）" if a.scope else ""))
+                text = QLabel(
+                    t("🎁 拿到奖励：{title}", title=a.title)
+                    + (t("（{scope}）", scope=a.scope.label) if a.scope else "")
+                )
                 text.setStyleSheet(f"color: {REWARD_COLOR};")
             else:
-                tag = f"[{a.scope.label}] " if a.scope else "[旧版] "
+                tag = f"[{a.scope.label}] " if a.scope else t("[旧版] ")
                 text = QLabel(f"✓ {tag}{a.title}")
+            text.setTextFormat(Qt.PlainText)  # 标题是用户写的，别当 HTML 解析
             text.setWordWrap(True)
             row.addWidget(text, 1)
             holder = QWidget()

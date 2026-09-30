@@ -1,138 +1,174 @@
-# 设计说明
+# Design notes
 
-写给未来的自己，解释为什么是这样而不是那样。
+**English** | [简体中文](DESIGN.zh-CN.md)
 
-## 一句话
+Notes for my future self on why things are the way they are.
 
-**一个清单 + 一个闹钟，全都在本地。**
+## In one sentence
 
-0.1 版接 Claude 拆任务、按键鼠活动算专注时长、规则引擎决定什么时候提醒。
-用下来真正每天在用的只有两样：把要做的事记下来，定时被叫起来休息。
-0.2 版把其余的全删了。
+**A to-do list plus an alarm clock, all local.**
 
-## 分层
+Version 0.1 used Claude to break plans into tasks, tracked focus time from keyboard / mouse
+activity, and had a rules engine decide when to nag. In practice only two things got used every
+day: writing down what to do, and being told to take a break. 0.2 deleted everything else.
+
+## Layers
 
 ```
-ui/          ← Qt，唯一知道界面存在的一层
-  ↓ 调用
-core/        ← 领域模型 + SQLite
-reminder.py  ← 后台 PowerShell 进程（不依赖 Qt，可测）
-config.py    ← 所有可调参数
+ui/          ← Qt; the only layer that knows there is a UI
+  ↓ calls
+core/        ← domain models + SQLite
+reminder.py  ← background PowerShell process (no Qt, testable)
+i18n.py      ← 中文 / English (no Qt)
+config.py    ← every tunable
 ```
 
-## 为什么完成记录按「周期」存
+## Why completion is stored per *period*
 
-每天 / 每周 / 每年任务是循环的。最直接的做法是给任务一个 `done` 字段，
-每天零点清一次 —— 但那需要一个「零点有人在跑」的前提，电脑关着过夜就漏清了，
-还得补跑逻辑。
+Daily / weekly / yearly tasks recur. The obvious design is a `done` flag reset at midnight, but
+that assumes something is running at midnight. Leave the PC off overnight and the reset is
+missed, so you need catch-up logic.
 
-现在的做法：`todo_done(todo_id, period)`，period 是
-`2026-09-24` / `2026-W39` / `2026`。「做完了没」= 当前周期有没有这条记录。
-跨天、跨周、跨年什么都不用做，读的时候换个 key 就自然变回没做。
-历史也顺带留下来了。
+Instead: `todo_done(todo_id, period)`, where period is `2026-09-24` / `2026-W39` / `2026`.
+"Is it done?" means "is there a row for the current period?". Crossing into a new day / week /
+year needs no work: reading with a new key naturally returns "not done". History comes for free.
 
-**每天任务例外：它的 period 不是日期，是「轮」。** 用下来发现「一天」不该由日历定 ——
-熬夜过了零点，还没睡的那段仍然是「今天」。所以每天任务不自动清零，
-当前轮的 key 存在 `meta.daily_round`，按「重新开始」换一个新 key（`round-<递增编号>`；
-不用时间戳，Windows 时钟精度有限，连按两下会撞 key）。
-从按日期的旧版本升上来时，第一轮的 key 就是当天日期，今天勾掉的照样算数。
-每天的奖励跟着轮走，同一套机制，不用额外代码。
+**Daily tasks are the exception: their period is a *round*, not a date.** It turned out a "day"
+shouldn't be defined by the calendar. If you're still up past midnight, it's still "today" for
+you. So daily tasks never reset on their own. The current round's key lives in
+`meta.daily_round`, and **New round** switches to a new key (`round-<counter>`; not a timestamp,
+because Windows clock resolution is coarse enough that a double-click could produce the same key
+twice). When upgrading from the date-based version, the first round's key is today's date, so
+whatever you already checked today still counts. Daily rewards follow the round with the same
+mechanism and no extra code.
 
-当天任务是一次性的，period 固定是它自己那一天，所以拖到后面几天才勾，
-勾的还是那一天的记录 —— 勾掉即消失，不会因为「今天」变了又冒出来。
+Today tasks are one-offs; their period is fixed to their own day. If you check one off days later,
+the row still belongs to that day. It disappears once checked and doesn't come back when "today"
+moves on.
 
-周用 ISO 周（周一开始），跨年那几天 `isocalendar()` 会把 12 月 29 日算进下一年的
-W01，这是对的：那一周本来就只有一周。
+Weeks are ISO weeks (starting Monday). Around New Year, `isocalendar()` puts e.g. Dec 29 into
+week 1 of the next year, which is right: that week is a single week.
 
-## 为什么提醒是一个 PowerShell 子进程，而不是 Qt 定时器
+## Why the reminder is a PowerShell child process, not a Qt timer
 
-用户给的就是 PowerShell 命令，`System.Speech` 在 Windows PowerShell 5.1 里开箱即用，
-Python 这边不用多装一个 TTS 库。弹框也用它自带的 `MessageBox`。
+The feature request came as a PowerShell command. `System.Speech` works out of the box in
+Windows PowerShell 5.1, so Python doesn't need a TTS library, and `MessageBox` comes with it too.
 
-代价是要管好这个进程的生死：
+The price is managing that process's lifetime:
 
-- **不用 `Start-Process`**，自己 `Popen`，拿到句柄。
-- **Job Object + `KILL_ON_JOB_CLOSE`**。`quit()` 里会主动 terminate，
-  但应用崩溃 / 被任务管理器结束时 Python 没机会跑任何收尾代码。
-  job 句柄是内核对象，进程一死系统就回收它，里面的进程跟着被杀。
-  `tests/test_reminder.py::test_child_dies_when_parent_is_killed` 用
-  TerminateProcess 硬杀父进程验证这一点。
-- **`-EncodedCommand`**：脚本按 UTF-16LE base64 传，中文、引号、`$` 全都不用转义，
-  也不受控制台代码页影响（0.1 版在这上面栽过一次）。
-- **报错写 stdout，stderr 丢掉**。stdout 被重定向时，PowerShell 往 stderr 写的是
-  CLIXML（连模块加载进度条都写进去），人没法读。脚本里一个 `trap` 把异常消息
-  写成一行 `ERROR: ...`，`[Console]::OutputEncoding` 设成 UTF-8，
-  应用读日志就能原样显示给用户。
-- **「跑起来了」要有证据**。脚本加载完程序集、选好语音之后打一行 ready 标记，
-  应用看到标记才显示「运行中」；进程退出了就显示退出码 + 日志最后几行。
+- **No `Start-Process`.** We `Popen` it ourselves and keep the handle.
+- **Job Object + `KILL_ON_JOB_CLOSE`.** `quit()` terminates it explicitly, but when the app
+  crashes or is ended from Task Manager, Python gets no chance to clean up. The job handle is a
+  kernel object: when our process dies Windows closes it, and everything in the job is killed.
+  `tests/test_reminder.py::test_child_dies_when_parent_is_killed` hard-kills the parent with
+  TerminateProcess to prove it.
+- **`-EncodedCommand`.** The script is passed as UTF-16LE base64, so Chinese text, quotes and `$`
+  need no escaping and the console code page doesn't matter (0.1 got bitten by this once).
+- **Errors go to stdout; stderr is discarded.** With stdout redirected, PowerShell writes
+  CLIXML to stderr (including module-loading progress bars), which no human can read. A `trap` in
+  the script prints the exception as a single `ERROR: ...` line, with `[Console]::OutputEncoding`
+  set to UTF-8, so the app can show it verbatim.
+- **"It's running" needs evidence.** After loading assemblies and picking a voice, the script
+  prints a ready marker that includes the chosen voice and its culture. Only then does the app
+  say "running", and it warns if the voice doesn't match the UI language. If the process exits,
+  the app shows the exit code and the last lines of the log.
 
-弹框阻塞循环是有意的：点掉之后才开始算下一个小时。人不在的时候不会攒一桌子框。
+The popup blocking the loop is deliberate: the next hour starts after you dismiss it. If you're
+away, you don't come back to a pile of boxes.
 
-## 奖励：领过就记一笔
+## Rewards: record that it was paid out
 
-`reward_claims(reward_id, period)` 跟完成记录一个思路：够线时插一条，
-「这期拿到没」= 有没有这条。所以
+`reward_claims(reward_id, period)` follows the same idea as completion: insert a row when the
+threshold is reached; "earned this period?" means "is there a row?". So:
 
-- 勾了又取消再勾，不会重复发 —— 检查的是「发过没」，不是「刚跨过线没」；
-- 换周期自然重来，不用清零；
-- 百分比用整数比（`done * 100 >= percent * total`），3 件做完 1 件稳稳算 ≥33%，
-  没有浮点边界。
+- Unchecking and re-checking doesn't pay twice. We check "was it paid?", not "did we just cross?".
+- A new period starts fresh with nothing to reset.
+- Percentages compare integers (`done * 100 >= percent * total`), so 1 of 3 is reliably ≥ 33%,
+  with no floating-point edge cases.
 
-只在「勾上」那一下和关掉奖励窗口时检查，不在定时循环里查 ——
-奖励是对一个动作的回应，过了几分钟才弹出来就没那个味道了。
+The check runs only on a check-off and when the Rewards window closes, not in the timer loop.
+A reward is a response to an action; popping up minutes later loses the point.
 
-## 活动记录：单独一张只追加的表
+## Activity graph: a separate append-only table
 
-直接从 `todo_done` 画图最省事，但它会跟着任务一起删（外键级联）——
-删掉一个每天任务，它一年的格子就全没了。所以另起 `activity` 表：
-勾掉时记一条，**标题当场抄一份**，不设外键，删任务、删奖励都不动它。
+Drawing straight from `todo_done` would be easiest, but those rows are deleted along with their
+task (foreign-key cascade): delete a daily task and its whole year of squares disappears. So there
+is a separate `activity` table. Each check-off appends a row with **a copy of the title**, with no
+foreign key, so deleting tasks or rewards leaves it untouched.
 
-取消勾选是唯一会删记录的操作：那说明刚才是点错了，按 `(任务, 周期)` 撤掉对应那条。
+Unchecking is the only operation that removes a row, because it means the check was a mistake.
+It removes the matching `(task, period)` entry.
 
-「哪天」按做完那一刻的日期算（`at` 的前 10 个字符），不按周期 ——
-熬夜过零点勾掉的每天任务记在新的一天，这就是那一刻真实发生的事。
+The day is the date of the moment it was done (the first 10 characters of `at`), not the period.
+A daily task checked after midnight lands on the new day, because that's what actually happened.
 
-格子排布、颜色分档、连续天数都在 `core/stats.py`，纯函数，测试不用起 Qt。
+Grid layout, shading and streaks live in `core/stats.py` as pure functions; the tests don't need Qt.
 
-## 打包：PyInstaller 目录模式 + Inno Setup
+## 中文 / English: the Chinese text is the key
 
-- **不用单文件 exe**。onefile 每次启动都要解压到临时目录，慢，还容易被杀毒软件拦。
-  目录模式装进 `%LOCALAPPDATA%\Programs\jo-app`，启动就是直接跑。
-- **不要管理员权限**（`PrivilegesRequired=lowest`）。开机自启写 HKCU 的 Run 键。
-- **正在运行时装 / 卸**：exe 被占着覆盖不了。应用启动时建一个命名 mutex
-  `jo-app-running`，安装程序的 `AppMutex` 看到它就请用户先退出。
-- **删掉用不上的 Qt 文件**（`build.ps1` 里）：软件 OpenGL、QML、PDF、虚拟键盘。
-  120 MB → 76 MB。删了插件，Qt 就不会去加载它们。
-- **CI 和本机同一个脚本**。Inno Setup 在 CI 里按固定版本（7.1.0）下载安装，
-  简体中文界面是它自带的。
+`t("完成 {done}/{total}", done=1, total=3)`: the Chinese source string is the key, looked up in
+`i18n.EN` in English mode. We don't use Qt's `.ts/.qm` workflow, which needs the lupdate / lrelease
+toolchain and an extra compile step. For an app this size a dict is enough, and the code still
+reads the way it did.
 
-## 退出为什么用 exit() 而不是 quit()
+The downside is that a missing translation doesn't fail loudly; it just shows Chinese in the
+English UI. So `tests/test_i18n.py` walks the AST for every `t("...")` call (including strings
+concatenated across lines) and fails on a missing translation, mismatched `{placeholders}`, or a
+stale entry in the English table that nothing uses any more.
 
-Qt 6 的 `QCoreApplication::quit()` 只是一个**请求**：它先挨个问顶层窗口能不能关，
-有一个不同意就作罢。我们的主窗口为了「× 缩回托盘」恰好总是不同意 ——
-结果「退出」时灵时不灵（跟窗口的状态、时序有关，测试里大概一半的概率卡住）。
+Switching is **live**: the main and activity windows are rebuilt in the new language (keeping
+their position and any half-typed task), the tray menu is rebuilt, Qt's own translation for
+dialog buttons is installed or removed, and the reminder restarts with the new language's text
+and voice. We rebuild rather than calling `retranslate` on each widget, because most text is
+assembled during `refresh()`; patching it piece by piece would be more code and easier to get wrong.
 
-现在：真退出时先把主窗口的 `allow_close` 打开、自己把窗口关掉，
-最后用 `exit(0)` 直接结束事件循环。关机 / 注销时 Windows 来问能不能关（`commitDataRequest`），
-也一样放行。
+Default reminder text follows the language: if the configured value equals the default of *any*
+language, it's treated as "not customised" and the current language's default is used; anything
+else is used as-is. That keeps existing configs (which store the Chinese defaults) correct in English.
 
-## 为什么关窗口不退出
+## Packaging: PyInstaller one-folder + Inno Setup
 
-提醒要在你干活的时候跑，而你干活的时候不会一直开着清单窗口。
-所以 × 只是缩回托盘；「退出」按钮和托盘菜单的「退出」才是真的退出，
-会把提醒一起关掉。第一次缩回托盘时弹一条通知说明这件事。
+- **Not a one-file exe.** One-file builds unpack to a temp folder on every start, which is slow
+  and often flagged by antivirus. One-folder, installed under `%LOCALAPPDATA%\Programs\jo-app`,
+  just runs.
+- **No admin rights** (`PrivilegesRequired=lowest`). Start-with-Windows writes the HKCU Run key.
+- **Installing / uninstalling while it runs:** a running exe can't be overwritten. The app
+  creates a named mutex `jo-app-running`, and the installer's `AppMutex` asks the user to quit first.
+- **Drop the Qt files we don't use** (in `build.ps1`): software OpenGL, QML, PDF, virtual
+  keyboard. 120 MB → 76 MB. With the plugins gone, Qt never tries to load them.
+- **CI and local builds use the same script.** CI installs a pinned Inno Setup (7.1.0), which
+  ships the Simplified Chinese messages; the installer is English + Chinese, picked from Windows.
 
-再双击快捷方式时，第二个实例通过 `QLocalServer` 叫第一个把窗口拿出来，
-然后自己退出 —— 否则单实例锁会让「双击没反应」，看起来像坏了。
+## Why quitting uses exit(), not quit()
 
-## 为什么 SQLite 而不是 JSON 文件
+In Qt 6, `QCoreApplication::quit()` is only a **request**: it first asks each top-level window
+whether it may close, and gives up if any says no. Our main window always says no, because
+× means "hide to tray". The result: **Quit** sometimes did nothing (depending on window state and
+timing; about half the time in tests).
 
-- 完成记录会一直增长，追加写比整文件重写安全。
-- 用户想自己查数据时，SQLite 有现成的工具链。
-- 标准库自带，零依赖。
+Now a real quit first sets `allow_close` on the main window, closes the windows itself, and ends
+the event loop with `exit(0)`. When Windows asks during shutdown / logoff (`commitDataRequest`),
+closing is allowed as well.
 
-## 已知的粗糙处
+## Why closing the window doesn't quit
 
-- 念的话 / 弹框文字只能在 `config.json` 里改，改完要重启。
-- 任务不能改名、不能排序。改名就删掉重加。
-- 提醒不看你在不在电脑前 —— 走开两小时回来，会看到一个弹框（只有一个）。
+The reminder should run while you work, and you don't keep the list open while you work. So ×
+only hides to the tray; the Quit button and the tray's Quit really exit and stop the reminder.
+The first time the window hides, a notification explains this.
+
+Double-clicking the shortcut again makes the second instance ask the first (via `QLocalServer`)
+to show its window, then exit. Otherwise the single-instance lock would make the double-click
+appear to do nothing, which looks broken.
+
+## Why SQLite, not a JSON file
+
+- Completion history only grows; appending is safer than rewriting a whole file.
+- If you want to query your data yourself, SQLite has the tooling.
+- It's in the standard library, zero dependencies.
+
+## Known rough edges
+
+- Reminder text can only be changed in `config.json`, and needs a restart.
+- Tasks can't be renamed or reordered. Delete and re-add to rename.
+- The reminder doesn't know whether you're at the PC. Walk away for two hours and you come back
+  to one popup (only one).

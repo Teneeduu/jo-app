@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "jo-app"
-version = "0.5.0"
-description = "一个纯离线的 Windows 任务清单 + 定时休息提醒 —— if you joke yourself, you are joker of course."
+version = "0.6.0"
+description = "An offline Windows to-do list with timed break reminders, rewards and an activity graph — if you joke yourself, you are joker of course."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }

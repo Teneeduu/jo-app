@@ -20,6 +20,8 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
+from .i18n import t
+
 log = logging.getLogger(__name__)
 
 _IS_WINDOWS = os.name == "nt"
@@ -41,9 +43,9 @@ Add-Type -AssemblyName System.Windows.Forms
 $voice = {voice}
 $popup = {popup}
 $s = New-Object System.Speech.Synthesis.SpeechSynthesizer
-# 默认语音可能是英文的（Zira），念中文会变成乱读或者没声音 —— 有中文语音就换上
-$zh = $s.GetInstalledVoices() | Where-Object {{ $_.Enabled -and $_.VoiceInfo.Culture.Name -like 'zh*' }} | Select-Object -First 1
-if ($zh) {{ $s.SelectVoice($zh.VoiceInfo.Name) }}
+# 默认语音不一定是想要的语言（比如英文的 Zira 念中文会乱读）—— 有对应语言的语音就换上
+$want = $s.GetInstalledVoices() | Where-Object {{ $_.Enabled -and $_.VoiceInfo.Culture.Name -like '{culture}*' }} | Select-Object -First 1
+if ($want) {{ $s.SelectVoice($want.VoiceInfo.Name) }}
 [Console]::Out.WriteLine('{ready}|' + $s.Voice.Name + '|' + $s.Voice.Culture.Name)
 [Console]::Out.Flush()
 do {{
@@ -52,7 +54,7 @@ do {{
     if ($popup) {{
         # 隐形的置顶窗口当 owner，弹框才会盖在别的窗口上面
         $owner = New-Object System.Windows.Forms.Form -Property @{{ TopMost = $true; ShowInTaskbar = $false }}
-        [System.Windows.Forms.MessageBox]::Show($owner, $popup, '提示') | Out-Null
+        [System.Windows.Forms.MessageBox]::Show($owner, $popup, {title}) | Out-Null
         $owner.Dispose()
     }}
     while ($s.State -eq 'Speaking') {{ Start-Sleep -Milliseconds 200 }}
@@ -65,10 +67,19 @@ def _ps_quote(text: str) -> str:
     return "'" + text.replace("'", "''") + "'"
 
 
-def build_script(voice: str, popup: str, seconds: int, loop: bool = True) -> str:
+def build_script(
+    voice: str,
+    popup: str,
+    seconds: int,
+    loop: bool = True,
+    title: str = "提示",
+    culture: str = "zh",
+) -> str:
     return _SCRIPT.format(
         voice=_ps_quote(voice),
         popup=_ps_quote(popup),
+        title=_ps_quote(title),
+        culture=culture,
         seconds=max(0, int(seconds)),
         ready=READY_MARK,
         loop="$true" if loop else "$false",
@@ -200,6 +211,8 @@ class Reminder:
         self._one_shots: list[subprocess.Popen] = []
         self.minutes = 0
         self._failure = ""
+        self.title = "提示"  # 弹框标题
+        self.culture = "zh"  # 想用哪种语言的语音
 
     # --- 生命周期 ---
 
@@ -207,17 +220,19 @@ class Reminder:
         self.stop()
         self._failure = ""
         if not _IS_WINDOWS:
-            self._failure = "只支持 Windows"
+            self._failure = t("只支持 Windows")
             return self.status()
         if not (voice or popup):
-            self._failure = "念的话和弹窗文字都是空的，没什么可提醒的"
+            self._failure = t("念的话和弹窗文字都是空的，没什么可提醒的")
             return self.status()
         self.minutes = max(1, int(minutes))
-        script = build_script(voice, popup, self.minutes * 60)
+        script = build_script(
+            voice, popup, self.minutes * 60, title=self.title, culture=self.culture
+        )
         try:
             self._proc = self._spawn(script, self.log_path)
         except OSError as e:
-            self._failure = f"启动 PowerShell 失败：{e}"
+            self._failure = t("启动 PowerShell 失败：{error}", error=e)
             self._proc = None
         else:
             log.info("提醒进程已启动 pid=%s，每 %s 分钟", self._proc.pid, self.minutes)
@@ -228,7 +243,9 @@ class Reminder:
         if not _IS_WINDOWS or not (voice or popup):
             return
         self._one_shots = [p for p in self._one_shots if p.poll() is None]
-        script = build_script(voice, popup, 0, loop=False)
+        script = build_script(
+            voice, popup, 0, loop=False, title=self.title, culture=self.culture
+        )
         self._one_shots.append(
             self._spawn(script, self.log_path.with_name("reminder-test.log"))
         )
@@ -273,17 +290,23 @@ class Reminder:
             tail = _last_lines(
                 "\n".join(ln for ln in output.splitlines() if not ln.startswith(READY_MARK))
             )
-            return Status("failed", f"后台进程退出了（代码 {code}）" + (f"：{tail}" if tail else ""))
+            return Status(
+                "failed",
+                t("后台进程退出了（代码 {code}）", code=code) + (t("：{tail}", tail=tail) if tail else ""),
+            )
         ready = next(
             (ln for ln in output.splitlines() if ln.startswith(READY_MARK)), None
         )
         if ready is not None:
-            detail = f"每 {self.minutes} 分钟提醒一次"
+            detail = t("每 {n} 分钟提醒一次", n=self.minutes)
             _, voice, culture = (ready.split("|") + ["", ""])[:3]
-            if voice and not culture.lower().startswith("zh"):
-                detail += f" · ⚠ 这台电脑没有中文语音（用的是 {voice}），念中文可能听不清"
+            if voice and not culture.lower().startswith(self.culture):
+                lang = t("中文") if self.culture == "zh" else t("英文")
+                detail += " · ⚠ " + t(
+                    "这台电脑没有{lang}语音（用的是 {voice}），可能念不清楚", lang=lang, voice=voice
+                )
             return Status("running", detail)
-        return Status("starting", "正在启动……")
+        return Status("starting", t("正在启动……"))
 
     def _read_log(self) -> str:
         try:
