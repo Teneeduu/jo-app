@@ -35,6 +35,9 @@ class Config:
     remind_voice: str = "喝水时间到了，顺便起来活动一下吧"  # 空串 = 不念
     remind_popup: str = "休息下吧"  # 空串 = 不弹窗
 
+    # 主窗口置顶（左上角的 📌，像 Snipaste 的贴图一样浮在所有窗口上面）
+    pinned: bool = False
+
     # 界面语言：auto（跟系统）/ zh / en
     language: str = "auto"
 

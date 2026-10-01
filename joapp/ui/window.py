@@ -5,6 +5,7 @@
 
 加任务就是打一行字回车，不估时间、不拆解。分组标题点一下折叠 / 展开。
 关窗口只是缩回托盘 —— 提醒还要接着跑；真退出走「退出」按钮或托盘菜单。
+左上角的 📌 把窗口钉在最上层（像 Snipaste 的贴图），再点一下取消。
 """
 
 from __future__ import annotations
@@ -206,13 +207,23 @@ class MainWindow(QWidget):
     reminder_minutes_changed = Signal(int)
     collapsed_changed = Signal(list)  # 当前折叠着的 scope 值列表
     language_toggled = Signal()
+    pinned_changed = Signal(bool)
     activity_requested = Signal()
     changed = Signal()  # 勾 / 取消 / 删 / 重新开始之后，活动记录窗口要跟着刷新
 
-    def __init__(self, store: Store, collapsed: list[str], minutes: int, enabled: bool):
+    def __init__(
+        self,
+        store: Store,
+        collapsed: list[str],
+        minutes: int,
+        enabled: bool,
+        pinned: bool = False,
+    ):
         super().__init__()
         self.store = store
         self.setWindowTitle("jo-app")
+        # 还没显示之前设好，第一次出现就是置顶的，不闪
+        self.setWindowFlag(Qt.WindowStaysOnTopHint, pinned)
         self.setMinimumSize(420, 480)
         self.resize(480, 720)
 
@@ -221,6 +232,16 @@ class MainWindow(QWidget):
         root.setSpacing(12)
 
         top = QHBoxLayout()
+        top.setSpacing(8)
+        self.pin_btn = QToolButton()
+        self.pin_btn.setObjectName("Pin")
+        self.pin_btn.setText("📌")
+        self.pin_btn.setCheckable(True)
+        self.pin_btn.setChecked(pinned)
+        self.pin_btn.setCursor(Qt.PointingHandCursor)
+        self.pin_btn.toggled.connect(self.set_pinned)
+        self._update_pin_tooltip()
+        top.addWidget(self.pin_btn)
         title = QLabel("jo-app")
         title.setObjectName("Title")
         top.addWidget(title)
@@ -445,6 +466,35 @@ class MainWindow(QWidget):
         self.status.style().polish(self.status)
 
     # ---------- 窗口 ----------
+
+    @property
+    def pinned(self) -> bool:
+        return bool(self.windowFlags() & Qt.WindowStaysOnTopHint)
+
+    def set_pinned(self, pinned: bool) -> None:
+        """钉在最上层 / 取消。
+
+        用 Qt 的 WindowStaysOnTopHint 而不是直接调 SetWindowPos(HWND_TOPMOST)：
+        Qt 自己在 raise / activate / 隐藏再显示时会重设 Z 序，绕开它设的置顶会被冲掉；
+        走 Qt 的标志，这些情况下都能保持，从这个窗口弹出的确认框也跟着置顶。
+        改这个标志会让 Qt 把窗口藏一下（句柄不变），所以原来显示着就马上再 show。
+        """
+        if self.pin_btn.isChecked() != pinned:
+            self.pin_btn.setChecked(pinned)  # 会再进来一次，下面接着做
+            return
+        if pinned == self.pinned:
+            return
+        visible = self.isVisible()
+        self.setWindowFlag(Qt.WindowStaysOnTopHint, pinned)
+        if visible:
+            self.show()
+        self._update_pin_tooltip()
+        self.pinned_changed.emit(pinned)
+
+    def _update_pin_tooltip(self) -> None:
+        self.pin_btn.setToolTip(
+            t("取消置顶") if self.pin_btn.isChecked() else t("置顶：窗口一直浮在最上层")
+        )
 
     # 真要退出（「退出」按钮、托盘、关机注销）时由 JoApp 打开，放行关窗口。
     # 不放行的话 Qt 6 的 quit() 会被这个窗口否决 —— 点了「退出」却时灵时不灵。

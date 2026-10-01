@@ -16,6 +16,8 @@ A Windows tray app for your to-do list, with timed break reminders.
   reward yourself. You define the reward, and it pops up the moment you cross the line.
 - **Activity graph.** A GitHub-style contribution graph: one square per day, greener means more done.
   Click a day to see exactly what you finished and which rewards you earned.
+- **Pin on top.** The 📌 in the top-left corner keeps the window above every other window,
+  like a pinned image in Snipaste. Click again to unpin; it's remembered.
 - **中文 / English.** Switch with one click in the top-right corner. It takes effect immediately,
   including the reminder's text, popup and voice.
 
@@ -43,7 +45,7 @@ Run it. **No admin rights and no Python needed.** It installs to
 
 ```
 ┌──────────────────────────────────────────┐
-│ jo-app        Tue, Sep 29 · Week 40 [中文] │
+│ 📌 jo-app     Tue, Sep 29 · Week 40 [中文] │
 │ ┌──────────────────────────────────────┐ │
 │ │ Add a task, press Enter              │ │
 │ └──────────────────────────────────────┘ │
@@ -81,6 +83,9 @@ Run it. **No admin rights and no Python needed.** It installs to
   Staying up past midnight doesn't wipe your progress; press it when you get up. All daily tasks
   are unchecked and daily rewards can be earned again. Today / weekly / yearly are untouched.
   The time the current round started is shown next to it.
+- **Pin:** the 📌 in the top-left corner keeps the window on top of everything else (it turns
+  red while pinned), handy for keeping your list in view while you work. Click it again to unpin.
+  It stays pinned when hidden to the tray and reopened, across language switches and restarts.
 - **Fold:** click a group heading. The folded state is remembered, **except Daily, which always
   opens expanded**, so you see your daily tasks every time you open the app.
 
@@ -248,6 +253,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\uninstall_startup.ps1
   "remind_voice": "喝水时间到了，顺便起来活动一下吧", // spoken text; "" = don't speak
   "remind_popup": "休息下吧",                       // popup text; "" = no popup
   "language": "auto",                              // auto (follow Windows) / zh / en
+  "pinned": false,                                 // main window always on top (📌)
   "collapsed": ["yearly"]                          // folded groups
 }
 ```

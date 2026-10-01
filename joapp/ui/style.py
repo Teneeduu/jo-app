@@ -119,6 +119,18 @@ QPushButton#Reset {{
     padding: 3px 10px;
     font-size: 12px;
 }}
+QToolButton#Pin {{
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    padding: 2px 4px;
+    font-size: 14px;
+}}
+QToolButton#Pin:hover {{ border-color: {BORDER}; }}
+QToolButton#Pin:checked {{
+    background: {ACCENT};
+    border-color: {ACCENT};
+}}
 QToolButton#Delete {{
     background: transparent;
     border: none;

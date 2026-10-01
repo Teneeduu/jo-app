@@ -150,6 +150,15 @@ Now a real quit first sets `allow_close` on the main window, closes the windows 
 the event loop with `exit(0)`. When Windows asks during shutdown / logoff (`commitDataRequest`),
 closing is allowed as well.
 
+## Pin on top: Qt's flag, not SetWindowPos
+
+The 📌 uses `Qt.WindowStaysOnTopHint` rather than calling `SetWindowPos(HWND_TOPMOST)` directly.
+In testing, a topmost state set behind Qt's back didn't stick: Qt manages the window's Z-order
+itself and wins. With Qt's flag, the window stays on top through raise / activate / hide-and-show,
+and dialogs opened from it (delete confirmation, rewards) are on top too. Changing the flag makes
+Qt hide the window for a moment (same native handle), so it's shown again immediately.
+At startup the flag is set before the first show, so there's no flash.
+
 ## Why closing the window doesn't quit
 
 The reminder should run while you work, and you don't keep the list open while you work. So ×

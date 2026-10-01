@@ -164,8 +164,10 @@ class JoApp(QObject):
             collapsed=list(self.cfg.collapsed),
             minutes=self.cfg.remind_minutes,
             enabled=self.cfg.remind_enabled,
+            pinned=self.cfg.pinned,
         )
         window.hidden_to_tray.connect(self._on_hidden)
+        window.pinned_changed.connect(self._save_pinned)
         window.quit_requested.connect(self.quit)
         window.test_reminder.connect(self.test_reminder)
         window.reminder_enabled_changed.connect(self.set_reminder_enabled)
@@ -299,6 +301,10 @@ class JoApp(QObject):
             self.tray.notify(
                 t("jo-app 还在托盘里"), t("提醒照常。要彻底退出，右键托盘图标 →「退出」。")
             )
+
+    def _save_pinned(self, pinned: bool) -> None:
+        self.cfg.pinned = pinned
+        config.save(self.cfg)
 
     def _save_collapsed(self, collapsed: list) -> None:
         self.cfg.collapsed = collapsed

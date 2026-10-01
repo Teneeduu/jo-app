@@ -107,6 +107,8 @@ EN: dict[str, str] = {
     "每周": "Weekly",
     "每年": "Yearly",
     # 主窗口
+    "置顶：窗口一直浮在最上层": "Pin: keep this window above all others",
+    "取消置顶": "Unpin",
     "↻ 重新开始": "↻ New round",
     "每天任务全部变回没做，每天的奖励可以重新拿": "Uncheck all daily tasks and make daily rewards available again",
     "还没有": "Nothing yet",
