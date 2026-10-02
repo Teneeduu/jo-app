@@ -102,7 +102,7 @@ def test_same_daily_task_across_rounds_counts_each_time(tmp_path):
     store = make_store(tmp_path)
     a = store.add("喝水", Scope.DAILY, MON)
     store.set_done(a, True, MON, at=at(MON))
-    store.reset_daily()
+    store.reset(Scope.DAILY)
     store.set_done(a, True, MON, at=at(MON + timedelta(days=1)))
     store.set_done(a, False, MON)  # 只撤这一轮的
     assert store.activity_counts(MON, MON + timedelta(days=1)) == {MON: 1}

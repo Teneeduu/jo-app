@@ -4,8 +4,13 @@
 换周期时什么都不用删，读的时候换个 key 就自然变回没做。
 
 每天任务的周期不看日历，是「轮」：meta 表里记着当前这一轮的 key，
-按「重新开始」（reset_daily）就换一个新 key —— 每天任务全变回没做，
+按「重新开始」（reset）就换一个新 key —— 每天任务全变回没做，
 每天的奖励也能重新拿。旧一轮的记录原样留着。
+
+每周 / 每年照常按日历换周期，也能手动「重新开始」：在日历周期后面加一段
+`#n`（`2026-W40#2`）。到了下周 / 明年日历周期变了，后缀自然不再生效。
+
+任务的显示顺序存在 todos.position，同一分组内调（move）。
 
 活动记录（activity）单独一张表，只追加：勾掉一件事、拿到一个奖励各记一条，
 标题当场抄一份。删任务、删奖励都不动它 —— 历史是历史。
@@ -27,7 +32,8 @@ CREATE TABLE IF NOT EXISTS todos (
     title       TEXT NOT NULL,
     scope       TEXT NOT NULL,
     day         TEXT NOT NULL,
-    created_at  TEXT NOT NULL
+    created_at  TEXT NOT NULL,
+    position    INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS todo_done (
@@ -72,6 +78,10 @@ CREATE TABLE IF NOT EXISTS meta (
 """
 
 
+# 除了每天（只有手动），每周 / 每年也能手动重来
+MANUAL_ROUND_SCOPES = (Scope.WEEKLY, Scope.YEARLY)
+
+
 def _dt(value: str | None) -> datetime | None:
     return datetime.fromisoformat(value) if value else None
 
@@ -88,9 +98,11 @@ class Store:
         self.conn.row_factory = sqlite3.Row
         self.conn.execute("PRAGMA foreign_keys = ON")
         self.conn.executescript(SCHEMA)
+        self._add_position_column()
         self._import_legacy_tasks()
         self._backfill_activity()
         self._daily_round = self._load_daily_round()
+        self._manual_rounds = {s: self._load_manual_round(s) for s in MANUAL_ROUND_SCOPES}
         self.conn.commit()
 
     def close(self) -> None:
@@ -109,26 +121,55 @@ class Store:
         self._set_meta("daily_round_started", datetime.now().isoformat())
         return first
 
-    def reset_daily(self) -> None:
-        """重新开始一轮：每天任务全部变回没做，每天的奖励可以重新拿。"""
-        # key 用递增编号，不用时间戳 —— Windows 时钟精度有限，连按两下可能拿到同一个时间，
-        # 第二下就等于没按。时间另存一份只给界面显示。
+    def _load_manual_round(self, scope: Scope) -> tuple[str, int, datetime | None]:
+        """每周 / 每年上一次手动重来：(当时的日历周期, 第几次, 什么时候)。"""
         row = self.conn.execute(
-            "SELECT value FROM meta WHERE key = 'daily_round_count'"
+            "SELECT value FROM meta WHERE key = ?", (f"round_{scope.value}",)
         ).fetchone()
-        count = int(row["value"]) + 1 if row else 1
+        if not row:
+            return "", 0, None
+        base, _, n = row["value"].rpartition("|")
+        started = self.conn.execute(
+            "SELECT value FROM meta WHERE key = ?", (f"round_{scope.value}_started",)
+        ).fetchone()
+        return base, int(n), _dt(started["value"]) if started else None
+
+    def reset(self, scope: Scope, today: date | None = None) -> None:
+        """重新开始一轮：这个分组的任务全部变回没做，这个分组的奖励可以重新拿。"""
         now = datetime.now()
-        self._daily_round = f"round-{count}"
-        self._set_meta("daily_round_count", str(count))
-        self._set_meta("daily_round", self._daily_round)
-        self._set_meta("daily_round_started", now.isoformat())
+        if scope is Scope.DAILY:
+            # key 用递增编号，不用时间戳 —— Windows 时钟精度有限，连按两下可能拿到同一个时间，
+            # 第二下就等于没按。时间另存一份只给界面显示。
+            row = self.conn.execute(
+                "SELECT value FROM meta WHERE key = 'daily_round_count'"
+            ).fetchone()
+            count = int(row["value"]) + 1 if row else 1
+            self._daily_round = f"round-{count}"
+            self._set_meta("daily_round_count", str(count))
+            self._set_meta("daily_round", self._daily_round)
+            self._set_meta("daily_round_started", now.isoformat())
+        elif scope in MANUAL_ROUND_SCOPES:
+            base = period_key(scope, today or date.today())
+            old_base, n, _ = self._manual_rounds[scope]
+            n = n + 1 if old_base == base else 1
+            self._manual_rounds[scope] = (base, n, now)
+            self._set_meta(f"round_{scope.value}", f"{base}|{n}")
+            self._set_meta(f"round_{scope.value}_started", now.isoformat())
+        else:
+            raise ValueError(f"{scope.label}任务是一次性的，没有「轮」")
         self.conn.commit()
 
-    def daily_round_started(self) -> datetime | None:
-        row = self.conn.execute(
-            "SELECT value FROM meta WHERE key = 'daily_round_started'"
-        ).fetchone()
-        return _dt(row["value"]) if row else None
+    def round_started(self, scope: Scope, today: date | None = None) -> datetime | None:
+        """这一轮是什么时候手动开始的。每周 / 每年这个周期里没手动重来过就是 None。"""
+        if scope is Scope.DAILY:
+            row = self.conn.execute(
+                "SELECT value FROM meta WHERE key = 'daily_round_started'"
+            ).fetchone()
+            return _dt(row["value"]) if row else None
+        base, n, started = self._manual_rounds.get(scope, ("", 0, None))
+        if n and base == period_key(scope, today or date.today()):
+            return started
+        return None
 
     def _set_meta(self, key: str, value: str) -> None:
         self.conn.execute(
@@ -138,19 +179,60 @@ class Store:
         )
 
     def _period(self, scope: Scope, today: date, day: date | None = None) -> str:
-        return period_key(scope, today, day, daily_round=self._daily_round)
+        key = period_key(scope, today, day, daily_round=self._daily_round)
+        if scope in MANUAL_ROUND_SCOPES:
+            base, n, _ = self._manual_rounds[scope]
+            if n and base == key:  # 这个日历周期里手动重来过
+                key = f"{key}#{n}"
+        return key
 
     # ---------- 增删改 ----------
 
     def add(self, title: str, scope: Scope, day: date | None = None) -> Todo:
+        """新任务排在这个分组最后。"""
         todo = Todo(title=title.strip(), scope=scope, day=day or date.today())
         cur = self.conn.execute(
-            "INSERT INTO todos (title, scope, day, created_at) VALUES (?,?,?,?)",
-            (todo.title, scope.value, todo.day.isoformat(), todo.created_at.isoformat()),
+            "INSERT INTO todos (title, scope, day, created_at, position) VALUES"
+            " (?, ?, ?, ?, (SELECT COALESCE(MAX(position), -1) + 1 FROM todos WHERE scope = ?))",
+            (
+                todo.title,
+                scope.value,
+                todo.day.isoformat(),
+                todo.created_at.isoformat(),
+                scope.value,
+            ),
         )
         self.conn.commit()
         todo.id = cur.lastrowid
         return todo
+
+    def move(self, todo: Todo, offset: int, today: date | None = None) -> bool:
+        """在分组里上移（-1）/ 下移（+1）一位。到头了移不动返回 False。
+
+        「一位」按界面上看得见的顺序算 —— 当天分组里藏着以前做完的任务，
+        跟它们换位置的话，按了等于没反应。
+        """
+        visible = [t.id for t in self.todos(todo.scope, today)]
+        if todo.id not in visible:
+            return False
+        i = visible.index(todo.id)
+        j = i + offset
+        if not 0 <= j < len(visible):
+            return False
+        # 先把整个分组的位置理成 0..n-1（旧数据可能有重复），再交换这两个
+        rows = self.conn.execute(
+            "SELECT id FROM todos WHERE scope = ? ORDER BY position, id",
+            (todo.scope.value,),
+        ).fetchall()
+        order = [r["id"] for r in rows]
+        a, b = order.index(visible[i]), order.index(visible[j])
+        order[a], order[b] = order[b], order[a]
+        self.conn.executemany(
+            "UPDATE todos SET position = ? WHERE id = ?",
+            [(pos, tid) for pos, tid in enumerate(order)],
+        )
+        self.conn.commit()
+        return True
 
     def delete(self, todo_id: int) -> None:
         self.conn.execute("DELETE FROM todos WHERE id = ?", (todo_id,))
@@ -197,7 +279,7 @@ class Store:
         """
         today = today or date.today()
         rows = self.conn.execute(
-            "SELECT * FROM todos WHERE scope = ? ORDER BY id", (scope.value,)
+            "SELECT * FROM todos WHERE scope = ? ORDER BY position, id", (scope.value,)
         ).fetchall()
         out = []
         for r in rows:
@@ -382,6 +464,15 @@ class Store:
         self._set_meta("activity_backfilled", datetime.now().isoformat())
 
     # ---------- 旧版本数据 ----------
+
+    def _add_position_column(self) -> None:
+        """0.8 之前的库没有 position：补上，按原来的顺序（id）排。"""
+        columns = {r["name"] for r in self.conn.execute("PRAGMA table_info(todos)")}
+        if "position" not in columns:
+            self.conn.execute(
+                "ALTER TABLE todos ADD COLUMN position INTEGER NOT NULL DEFAULT 0"
+            )
+            self.conn.execute("UPDATE todos SET position = id")
 
     def _import_legacy_tasks(self) -> None:
         """旧版本（按天排计划那一版）的 tasks 表：没做完的搬成当天任务，只搬一次。

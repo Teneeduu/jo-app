@@ -42,6 +42,11 @@ twice). When upgrading from the date-based version, the first round's key is tod
 whatever you already checked today still counts. Daily rewards follow the round with the same
 mechanism and no extra code.
 
+Weekly and yearly tasks keep their calendar periods but can also be restarted by hand. A manual
+round appends `#n` to the calendar key (`2026-W40#2`); `meta` remembers which calendar period
+the suffix belongs to, so once the week / year changes the suffix simply stops applying and the
+calendar takes over again. No cleanup job needed.
+
 Today tasks are one-offs; their period is fixed to their own day. If you check one off days later,
 the row still belongs to that day. It disappears once checked and doesn't come back when "today"
 moves on.
@@ -75,6 +80,14 @@ The price is managing that process's lifetime:
 
 The popup blocking the loop is deliberate: the next hour starts after you dismiss it. If you're
 away, you don't come back to a pile of boxes.
+
+## Ordering: a position column, moved by visible neighbour
+
+`todos.position` holds the order within a group; new tasks get `max + 1`. Older databases get the
+column added and filled from `id`, so existing order is kept. ↑ / ↓ swaps with the neighbour
+*as shown on screen*: the Today group hides tasks finished on earlier days, and swapping with an
+invisible one would look like the button did nothing. Before swapping, the group's positions are
+renumbered 0..n-1, which also repairs any duplicates.
 
 ## Rewards: record that it was paid out
 

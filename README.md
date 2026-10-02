@@ -74,8 +74,8 @@ Run it. **No admin rights and no Python needed.** It installs to
 |---|---|---|
 | **Daily** | Things you do every day | **Not reset by the calendar.** It stays done until you press **↻ New round** |
 | **Today** | One-off things, tied to the day you added them | Gone the next day once done. **Unfinished ones stay** and show "*N*d overdue" |
-| **Weekly** | Once-a-week things | Done for the whole week; unchecked again next Monday |
-| **Yearly** | Once-a-year things / yearly goals | Done for the whole year; unchecked again next year |
+| **Weekly** | Once-a-week things | Done for the whole week; unchecked again next Monday, or earlier with **↻ New round** |
+| **Yearly** | Once-a-year things / yearly goals | Done for the whole year; unchecked again next year, or earlier with **↻ New round** |
 
 - **Add:** type in the box → pick a group (Today by default, or `Ctrl+1`–`Ctrl+4`) → Enter.
 - **Delete:** the `×` at the end of a row (asks to confirm).
@@ -83,6 +83,11 @@ Run it. **No admin rights and no Python needed.** It installs to
   Staying up past midnight doesn't wipe your progress; press it when you get up. All daily tasks
   are unchecked and daily rewards can be earned again. Today / weekly / yearly are untouched.
   The time the current round started is shown next to it.
+  **Weekly and Yearly have the same button.** They still start over by the calendar (next Monday /
+  next year), but you can start a new round early; this unchecks that group and makes its rewards
+  available again, without touching the other groups.
+- **Reorder:** hover a task and **↑ ↓** appear at the end of the row; click to move it up or down
+  within its group. The order is saved. New tasks go to the bottom.
 - **Pin:** the 📌 in the top-left corner keeps the window on top of everything else (it turns
   red while pinned), handy for keeping your list in view while you work. Click it again to unpin.
   It stays pinned when hidden to the tray and reopened, across language switches and restarts.
@@ -97,7 +102,7 @@ Click **🎁 Rewards** at the bottom. Pick a group (Daily / Weekly / Yearly), a 
 - The moment a check pushes you over a threshold, a box tells you what you've earned. Cross
   several thresholds at once and you get them all.
 - **Each reward is given once per period:** daily rewards again after **New round**, weekly ones
-  next Monday, yearly ones next year. Unchecking and re-checking doesn't pay out twice.
+  next Monday, yearly ones next year (or earlier, with that group's **New round**). Unchecking and re-checking doesn't pay out twice.
 - Each group heading shows its completion percentage; the line underneath lists its rewards,
   with the ones earned this period in green.
 - The percentage only counts that group's tasks: "Daily 50%" looks at daily tasks only.

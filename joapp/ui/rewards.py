@@ -44,7 +44,12 @@ class RewardsDialog(QDialog):
         title = QLabel(t("完成到多少，奖励自己什么"))
         title.setObjectName("Title")
         root.addWidget(title)
-        hint = QLabel(t("每个奖励每个周期只发一次：每天的按「重新开始」后重来，每周的下周一重来，每年的明年重来。"))
+        hint = QLabel(
+            t(
+                "每个奖励每个周期只发一次。每天的按「↻ 重新开始」后重来；"
+                "每周、每年的到下周一 / 明年重来，也可以按「↻ 重新开始」提前重来。"
+            )
+        )
         hint.setObjectName("Subtitle")
         hint.setWordWrap(True)
         root.addWidget(hint)

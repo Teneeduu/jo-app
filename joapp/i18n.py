@@ -110,7 +110,9 @@ EN: dict[str, str] = {
     "置顶：窗口一直浮在最上层": "Pin: keep this window above all others",
     "取消置顶": "Unpin",
     "↻ 重新开始": "↻ New round",
-    "每天任务全部变回没做，每天的奖励可以重新拿": "Uncheck all daily tasks and make daily rewards available again",
+    "{scope}任务全部变回没做，{scope}的奖励可以重新拿": "Uncheck all {scope} tasks and make {scope} rewards available again",
+    "上移": "Move up",
+    "下移": "Move down",
     "还没有": "Nothing yet",
     "这一轮从 {when} 开始": "This round started {when}",
     "拖了 {n} 天": "{n}d overdue",
@@ -130,13 +132,15 @@ EN: dict[str, str] = {
     "退出": "Quit",
     "退出 jo-app，后台提醒一起关掉": "Quit jo-app and stop the background reminder",
     "重新开始": "New round",
-    "开始新一轮每天任务？\n\n这一轮做完了 {done}/{total} 件。重新开始后：\n· 每天任务全部变回没做\n· 每天的奖励可以重新拿\n\n当天 / 每周 / 每年的不受影响。": (
-        "Start a new round of daily tasks?\n\n"
+    "开始新一轮{scope}任务？\n\n这一轮做完了 {done}/{total} 件。重新开始后：\n· {scope}任务全部变回没做\n· {scope}的奖励可以重新拿\n\n其他分组不受影响。": (
+        "Start a new round of {scope} tasks?\n\n"
         "Done this round: {done}/{total}. After starting over:\n"
-        "· All daily tasks are unchecked\n"
-        "· Daily rewards can be earned again\n\n"
-        "Today / weekly / yearly tasks are not affected."
+        "· All {scope} tasks are unchecked\n"
+        "· {scope} rewards can be earned again\n\n"
+        "Other groups are not affected."
     ),
+    "\n\n到了下周一也会照常自动重新开始。": "\n\nIt will still start over automatically next Monday.",
+    "\n\n到了明年也会照常自动重新开始。": "\n\nIt will still start over automatically next year.",
     "删除任务": "Delete task",
     "删掉「{title}」？": "Delete \"{title}\"?",
     "\n\n这是{scope}都会出现的任务，删了以后就不再出现。": "\n\nThis is a recurring {scope} task. Once deleted, it won't come back.",
@@ -146,9 +150,9 @@ EN: dict[str, str] = {
     # 奖励
     "给自己的奖励": "Rewards",
     "完成到多少，奖励自己什么": "Reward yourself when you get there",
-    "每个奖励每个周期只发一次：每天的按「重新开始」后重来，每周的下周一重来，每年的明年重来。": (
-        "Each reward is given once per period: daily ones again after \"New round\", "
-        "weekly ones next Monday, yearly ones next year."
+    "每个奖励每个周期只发一次。每天的按「↻ 重新开始」后重来；每周、每年的到下周一 / 明年重来，也可以按「↻ 重新开始」提前重来。": (
+        "Each reward is given once per period. Daily ones come back after \"↻ New round\"; "
+        "weekly and yearly ones next Monday / next year, or earlier with \"↻ New round\"."
     ),
     "分组": "Group",
     "完成到": "When done reaches",

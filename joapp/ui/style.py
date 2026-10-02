@@ -131,6 +131,15 @@ QToolButton#Pin:checked {{
     background: {ACCENT};
     border-color: {ACCENT};
 }}
+QToolButton#Move {{
+    background: transparent;
+    border: none;
+    color: {MUTED};
+    font-size: 14px;
+    padding: 0 4px;
+}}
+QToolButton#Move:hover {{ color: {ACCENT}; }}
+QToolButton#Move:disabled {{ color: {BORDER}; }}
 QToolButton#Delete {{
     background: transparent;
     border: none;

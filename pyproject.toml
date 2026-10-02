@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "jo-app"
-version = "0.7.0"
+version = "0.8.0"
 description = "An offline Windows to-do list with timed break reminders, rewards and an activity graph — if you joke yourself, you are joker of course."
 readme = "README.md"
 requires-python = ">=3.10"
